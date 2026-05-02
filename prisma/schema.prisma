@@ -1,0 +1,763 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum UserRole {
+  ADMIN
+  STAFF
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  PARTIAL
+  OVERDUE
+  CANCELLED
+}
+
+enum QuotationStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  CONVERTED
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  SENT
+  PARTIAL
+  RECEIVED
+  CANCELLED
+}
+
+enum PurchaseStatus {
+  DRAFT
+  COMPLETED
+  CANCELLED
+}
+
+enum ChallanStatus {
+  DRAFT
+  DELIVERED
+  RETURNED
+  CONVERTED
+  CANCELLED
+}
+
+enum ReturnableChallanStatus {
+  DRAFT
+  ISSUED
+  PARTIAL_RETURN
+  FULLY_RETURNED
+  CANCELLED
+}
+
+enum PaymentMode {
+  CASH
+  CHEQUE
+  BANK_TRANSFER
+  UPI
+  CARD
+  OTHER
+}
+
+enum GSTType {
+  CGST_SGST
+  IGST
+  EXEMPT
+}
+
+enum TransactionType {
+  SALE
+  PURCHASE
+  PAYMENT_IN
+  PAYMENT_OUT
+  CREDIT_NOTE
+  DEBIT_NOTE
+}
+
+// ============================================================
+// USER & AUTHENTICATION
+// ============================================================
+
+model User {
+  id            String     @id @default(cuid())
+  name          String
+  email         String     @unique
+  emailVerified DateTime?
+  password      String
+  mobile        String?
+  role          UserRole   @default(STAFF)
+  status        UserStatus @default(ACTIVE)
+  branch        String?
+  avatar        String?
+  resetToken    String?    @unique
+  resetTokenExp DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  sessions     Session[]
+  accounts     Account[]
+  staffRoles   StaffRole[]
+  invoices     Invoice[]   @relation("CreatedByInvoice")
+  purchases    Purchase[]  @relation("CreatedByPurchase")
+  quotations   Quotation[] @relation("CreatedByQuotation")
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ============================================================
+// ROLE & PERMISSIONS
+// ============================================================
+
+model Role {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  permissions RolePermission[]
+  staffRoles  StaffRole[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(cuid())
+  module      String
+  action      String
+  description String?
+  createdAt   DateTime @default(now())
+
+  rolePermissions RolePermission[]
+
+  @@unique([module, action])
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String     @id @default(cuid())
+  roleId       String
+  permissionId String
+  createdAt    DateTime   @default(now())
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model StaffRole {
+  id        String   @id @default(cuid())
+  userId    String
+  roleId    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@map("staff_roles")
+}
+
+// ============================================================
+// BUSINESS SETTINGS
+// ============================================================
+
+model BusinessSettings {
+  id             String   @id @default(cuid())
+  companyName    String
+  gstin          String?
+  pan            String?
+  address        String?  @db.Text
+  city           String?
+  state          String?
+  pincode        String?
+  phone          String?
+  email          String?
+  website        String?
+  logo           String?
+  bankName       String?
+  bankAccount    String?
+  bankIfsc       String?
+  bankBranch     String?
+  invoicePrefix  String   @default("INV")
+  poPrefix       String   @default("PO")
+  quotPrefix     String   @default("QT")
+  challanPrefix  String   @default("DC")
+  termsCondition String?  @db.Text
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("business_settings")
+}
+
+// ============================================================
+// INVENTORY
+// ============================================================
+
+model Category {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  products Product[]
+
+  @@map("categories")
+}
+
+model Brand {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  products Product[]
+
+  @@map("brands")
+}
+
+model Unit {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  shortName String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products Product[]
+
+  @@map("units")
+}
+
+model Product {
+  id             String   @id @default(cuid())
+  name           String
+  sku            String?  @unique
+  barcode        String?  @unique
+  hsnCode        String?
+  sacCode        String?
+  description    String?  @db.Text
+  categoryId     String?
+  brandId        String?
+  unitId         String?
+  purchasePrice  Decimal  @default(0) @db.Decimal(10, 2)
+  sellingPrice   Decimal  @default(0) @db.Decimal(10, 2)
+  mrp            Decimal  @default(0) @db.Decimal(10, 2)
+  gstRate        Decimal  @default(0) @db.Decimal(5, 2)
+  gstType        GSTType  @default(CGST_SGST)
+  openingStock   Int      @default(0)
+  currentStock   Int      @default(0)
+  lowStockAlert  Int      @default(0)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  category Category? @relation(fields: [categoryId], references: [id])
+  brand    Brand?    @relation(fields: [brandId], references: [id])
+  unit     Unit?     @relation(fields: [unitId], references: [id])
+
+  invoiceItems           InvoiceItem[]
+  purchaseItems          PurchaseItem[]
+  quotationItems         QuotationItem[]
+  purchaseOrderItems     PurchaseOrderItem[]
+  challanItems           ChallanItem[]
+  returnableChallanItems ReturnableChallanItem[]
+  stockMovements         StockMovement[]
+
+  @@map("products")
+}
+
+model StockMovement {
+  id              String          @id @default(cuid())
+  productId       String
+  type            TransactionType
+  quantity        Int
+  balanceAfter    Int
+  referenceId     String?
+  referenceType   String?
+  note            String?
+  createdAt       DateTime        @default(now())
+
+  product Product @relation(fields: [productId], references: [id])
+
+  @@map("stock_movements")
+}
+
+// ============================================================
+// CUSTOMERS
+// ============================================================
+
+model Customer {
+  id              String   @id @default(cuid())
+  name            String
+  email           String?
+  mobile          String?
+  phone           String?
+  gstin           String?
+  pan             String?
+  billingAddress  String?  @db.Text
+  billingCity     String?
+  billingState    String?
+  billingPincode  String?
+  shippingAddress String?  @db.Text
+  shippingCity    String?
+  shippingState   String?
+  shippingPincode String?
+  creditLimit     Decimal  @default(0) @db.Decimal(10, 2)
+  openingBalance  Decimal  @default(0) @db.Decimal(10, 2)
+  isActive        Boolean  @default(true)
+  notes           String?  @db.Text
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  invoices           Invoice[]
+  quotations         Quotation[]
+  challans           DeliveryChallan[]
+  returnableChallans ReturnableChallan[]
+  ledgerEntries      LedgerEntry[]
+
+  @@map("customers")
+}
+
+// ============================================================
+// VENDORS
+// ============================================================
+
+model Vendor {
+  id              String   @id @default(cuid())
+  name            String
+  email           String?
+  mobile          String?
+  phone           String?
+  gstin           String?
+  pan             String?
+  address         String?  @db.Text
+  city            String?
+  state           String?
+  pincode         String?
+  creditLimit     Decimal  @default(0) @db.Decimal(10, 2)
+  openingBalance  Decimal  @default(0) @db.Decimal(10, 2)
+  isActive        Boolean  @default(true)
+  notes           String?  @db.Text
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  purchaseOrders PurchaseOrder[]
+  purchases      Purchase[]
+  ledgerEntries  LedgerEntry[]
+
+  @@map("vendors")
+}
+
+// ============================================================
+// QUOTATIONS
+// ============================================================
+
+model Quotation {
+  id             String          @id @default(cuid())
+  quotationNo    String          @unique
+  customerId     String
+  date           DateTime
+  validUntil     DateTime?
+  status         QuotationStatus @default(DRAFT)
+  subtotal       Decimal         @db.Decimal(10, 2)
+  discountAmount Decimal         @default(0) @db.Decimal(10, 2)
+  taxAmount      Decimal         @default(0) @db.Decimal(10, 2)
+  totalAmount    Decimal         @db.Decimal(10, 2)
+  notes          String?         @db.Text
+  terms          String?         @db.Text
+  convertedToId  String?
+  createdById    String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  customer  Customer        @relation(fields: [customerId], references: [id])
+  createdBy User?           @relation("CreatedByQuotation", fields: [createdById], references: [id])
+  items     QuotationItem[]
+
+  @@map("quotations")
+}
+
+model QuotationItem {
+  id          String  @id @default(cuid())
+  quotationId String
+  productId   String
+  description String?
+  quantity    Decimal @db.Decimal(10, 3)
+  rate        Decimal @db.Decimal(10, 2)
+  discount    Decimal @default(0) @db.Decimal(5, 2)
+  gstRate     Decimal @default(0) @db.Decimal(5, 2)
+  gstAmount   Decimal @default(0) @db.Decimal(10, 2)
+  amount      Decimal @db.Decimal(10, 2)
+
+  quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  product   Product   @relation(fields: [productId], references: [id])
+
+  @@map("quotation_items")
+}
+
+// ============================================================
+// INVOICES / BILLING
+// ============================================================
+
+model Invoice {
+  id              String        @id @default(cuid())
+  invoiceNo       String        @unique
+  customerId      String
+  date            DateTime
+  dueDate         DateTime?
+  status          InvoiceStatus @default(DRAFT)
+  gstType         GSTType       @default(CGST_SGST)
+  placeOfSupply   String?
+  subtotal        Decimal       @db.Decimal(10, 2)
+  discountAmount  Decimal       @default(0) @db.Decimal(10, 2)
+  cgstAmount      Decimal       @default(0) @db.Decimal(10, 2)
+  sgstAmount      Decimal       @default(0) @db.Decimal(10, 2)
+  igstAmount      Decimal       @default(0) @db.Decimal(10, 2)
+  taxAmount       Decimal       @default(0) @db.Decimal(10, 2)
+  totalAmount     Decimal       @db.Decimal(10, 2)
+  paidAmount      Decimal       @default(0) @db.Decimal(10, 2)
+  balanceAmount   Decimal       @default(0) @db.Decimal(10, 2)
+  paymentMode     PaymentMode?
+  notes           String?       @db.Text
+  terms           String?       @db.Text
+  fromQuotationId String?
+  fromChallanId   String?
+  createdById     String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  customer  Customer      @relation(fields: [customerId], references: [id])
+  createdBy User?         @relation("CreatedByInvoice", fields: [createdById], references: [id])
+  items     InvoiceItem[]
+  payments  Payment[]
+
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id          String  @id @default(cuid())
+  invoiceId   String
+  productId   String
+  description String?
+  quantity    Decimal @db.Decimal(10, 3)
+  rate        Decimal @db.Decimal(10, 2)
+  discount    Decimal @default(0) @db.Decimal(5, 2)
+  gstRate     Decimal @default(0) @db.Decimal(5, 2)
+  cgstRate    Decimal @default(0) @db.Decimal(5, 2)
+  sgstRate    Decimal @default(0) @db.Decimal(5, 2)
+  igstRate    Decimal @default(0) @db.Decimal(5, 2)
+  cgstAmount  Decimal @default(0) @db.Decimal(10, 2)
+  sgstAmount  Decimal @default(0) @db.Decimal(10, 2)
+  igstAmount  Decimal @default(0) @db.Decimal(10, 2)
+  gstAmount   Decimal @default(0) @db.Decimal(10, 2)
+  amount      Decimal @db.Decimal(10, 2)
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@map("invoice_items")
+}
+
+// ============================================================
+// PURCHASE ORDERS
+// ============================================================
+
+model PurchaseOrder {
+  id             String              @id @default(cuid())
+  poNo           String              @unique
+  vendorId       String
+  date           DateTime
+  expectedDate   DateTime?
+  status         PurchaseOrderStatus @default(DRAFT)
+  subtotal       Decimal             @db.Decimal(10, 2)
+  discountAmount Decimal             @default(0) @db.Decimal(10, 2)
+  taxAmount      Decimal             @default(0) @db.Decimal(10, 2)
+  totalAmount    Decimal             @db.Decimal(10, 2)
+  notes          String?             @db.Text
+  convertedToId  String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  vendor Vendor             @relation(fields: [vendorId], references: [id])
+  items  PurchaseOrderItem[]
+
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id              String  @id @default(cuid())
+  purchaseOrderId String
+  productId       String
+  description     String?
+  quantity        Decimal @db.Decimal(10, 3)
+  receivedQty     Decimal @default(0) @db.Decimal(10, 3)
+  rate            Decimal @db.Decimal(10, 2)
+  discount        Decimal @default(0) @db.Decimal(5, 2)
+  gstRate         Decimal @default(0) @db.Decimal(5, 2)
+  gstAmount       Decimal @default(0) @db.Decimal(10, 2)
+  amount          Decimal @db.Decimal(10, 2)
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  product       Product       @relation(fields: [productId], references: [id])
+
+  @@map("purchase_order_items")
+}
+
+// ============================================================
+// PURCHASES
+// ============================================================
+
+model Purchase {
+  id             String         @id @default(cuid())
+  purchaseNo     String         @unique
+  vendorId       String
+  date           DateTime
+  dueDate        DateTime?
+  status         PurchaseStatus @default(DRAFT)
+  gstType        GSTType        @default(CGST_SGST)
+  billNo         String?
+  billDate       DateTime?
+  subtotal       Decimal        @db.Decimal(10, 2)
+  discountAmount Decimal        @default(0) @db.Decimal(10, 2)
+  cgstAmount     Decimal        @default(0) @db.Decimal(10, 2)
+  sgstAmount     Decimal        @default(0) @db.Decimal(10, 2)
+  igstAmount     Decimal        @default(0) @db.Decimal(10, 2)
+  taxAmount      Decimal        @default(0) @db.Decimal(10, 2)
+  totalAmount    Decimal        @db.Decimal(10, 2)
+  paidAmount     Decimal        @default(0) @db.Decimal(10, 2)
+  balanceAmount  Decimal        @default(0) @db.Decimal(10, 2)
+  paymentMode    PaymentMode?
+  notes          String?        @db.Text
+  fromPoId       String?
+  createdById    String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  vendor    Vendor         @relation(fields: [vendorId], references: [id])
+  createdBy User?          @relation("CreatedByPurchase", fields: [createdById], references: [id])
+  items     PurchaseItem[]
+  payments  Payment[]
+
+  @@map("purchases")
+}
+
+model PurchaseItem {
+  id          String  @id @default(cuid())
+  purchaseId  String
+  productId   String
+  description String?
+  quantity    Decimal @db.Decimal(10, 3)
+  rate        Decimal @db.Decimal(10, 2)
+  discount    Decimal @default(0) @db.Decimal(5, 2)
+  gstRate     Decimal @default(0) @db.Decimal(5, 2)
+  cgstRate    Decimal @default(0) @db.Decimal(5, 2)
+  sgstRate    Decimal @default(0) @db.Decimal(5, 2)
+  igstRate    Decimal @default(0) @db.Decimal(5, 2)
+  cgstAmount  Decimal @default(0) @db.Decimal(10, 2)
+  sgstAmount  Decimal @default(0) @db.Decimal(10, 2)
+  igstAmount  Decimal @default(0) @db.Decimal(10, 2)
+  gstAmount   Decimal @default(0) @db.Decimal(10, 2)
+  amount      Decimal @db.Decimal(10, 2)
+
+  purchase Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id])
+
+  @@map("purchase_items")
+}
+
+// ============================================================
+// DELIVERY CHALLANS
+// ============================================================
+
+model DeliveryChallan {
+  id          String        @id @default(cuid())
+  challanNo   String        @unique
+  customerId  String
+  date        DateTime
+  status      ChallanStatus @default(DRAFT)
+  subtotal    Decimal       @db.Decimal(10, 2)
+  taxAmount   Decimal       @default(0) @db.Decimal(10, 2)
+  totalAmount Decimal       @db.Decimal(10, 2)
+  notes       String?       @db.Text
+  vehicleNo   String?
+  convertedToId String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  customer Customer      @relation(fields: [customerId], references: [id])
+  items    ChallanItem[]
+
+  @@map("delivery_challans")
+}
+
+model ChallanItem {
+  id          String  @id @default(cuid())
+  challanId   String
+  productId   String
+  description String?
+  quantity    Decimal @db.Decimal(10, 3)
+  rate        Decimal @db.Decimal(10, 2)
+  gstRate     Decimal @default(0) @db.Decimal(5, 2)
+  gstAmount   Decimal @default(0) @db.Decimal(10, 2)
+  amount      Decimal @db.Decimal(10, 2)
+
+  challan DeliveryChallan @relation(fields: [challanId], references: [id], onDelete: Cascade)
+  product Product         @relation(fields: [productId], references: [id])
+
+  @@map("challan_items")
+}
+
+// ============================================================
+// RETURNABLE DELIVERY CHALLANS
+// ============================================================
+
+model ReturnableChallan {
+  id          String                  @id @default(cuid())
+  challanNo   String                  @unique
+  customerId  String
+  date        DateTime
+  returnDate  DateTime?
+  status      ReturnableChallanStatus @default(DRAFT)
+  subtotal    Decimal                 @db.Decimal(10, 2)
+  taxAmount   Decimal                 @default(0) @db.Decimal(10, 2)
+  totalAmount Decimal                 @db.Decimal(10, 2)
+  notes       String?                 @db.Text
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+
+  customer Customer                @relation(fields: [customerId], references: [id])
+  items    ReturnableChallanItem[]
+
+  @@map("returnable_challans")
+}
+
+model ReturnableChallanItem {
+  id           String  @id @default(cuid())
+  challanId    String
+  productId    String
+  description  String?
+  issuedQty    Decimal @db.Decimal(10, 3)
+  returnedQty  Decimal @default(0) @db.Decimal(10, 3)
+  pendingQty   Decimal @db.Decimal(10, 3)
+  rate         Decimal @db.Decimal(10, 2)
+  gstRate      Decimal @default(0) @db.Decimal(5, 2)
+  gstAmount    Decimal @default(0) @db.Decimal(10, 2)
+  amount       Decimal @db.Decimal(10, 2)
+
+  challan ReturnableChallan @relation(fields: [challanId], references: [id], onDelete: Cascade)
+  product Product           @relation(fields: [productId], references: [id])
+
+  @@map("returnable_challan_items")
+}
+
+// ============================================================
+// PAYMENTS
+// ============================================================
+
+model Payment {
+  id            String      @id @default(cuid())
+  type          String      // INVOICE | PURCHASE
+  referenceId   String
+  amount        Decimal     @db.Decimal(10, 2)
+  paymentMode   PaymentMode
+  paymentDate   DateTime
+  referenceNo   String?
+  notes         String?
+  createdAt     DateTime    @default(now())
+
+  invoice  Invoice?  @relation(fields: [referenceId], references: [id], map: "payment_invoice_fk")
+  purchase Purchase? @relation(fields: [referenceId], references: [id], map: "payment_purchase_fk")
+
+  @@map("payments")
+}
+
+// ============================================================
+// LEDGER
+// ============================================================
+
+model LedgerEntry {
+  id              String          @id @default(cuid())
+  customerId      String?
+  vendorId        String?
+  type            TransactionType
+  debit           Decimal         @default(0) @db.Decimal(10, 2)
+  credit          Decimal         @default(0) @db.Decimal(10, 2)
+  balance         Decimal         @db.Decimal(10, 2)
+  referenceId     String?
+  referenceType   String?
+  referenceNo     String?
+  date            DateTime
+  description     String?
+  createdAt       DateTime        @default(now())
+
+  customer Customer? @relation(fields: [customerId], references: [id])
+  vendor   Vendor?   @relation(fields: [vendorId], references: [id])
+
+  @@map("ledger_entries")
+}

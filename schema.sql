@@ -1,0 +1,487 @@
+-- ============================================================
+-- VIros GST Billing — MySQL Schema for XAMPP
+-- Run this in phpMyAdmin SQL tab after creating your database
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS users (
+  id VARCHAR(36) NOT NULL PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  email VARCHAR(255) NOT NULL UNIQUE,
+  email_verified DATETIME NULL,
+  password VARCHAR(255) NOT NULL,
+  mobile VARCHAR(20) NULL,
+  role VARCHAR(20) NOT NULL DEFAULT 'STAFF',
+  status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+  branch VARCHAR(100) NULL,
+  avatar VARCHAR(255) NULL,
+  reset_token VARCHAR(255) NULL UNIQUE,
+  reset_token_exp DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS roles (
+  id VARCHAR(36) NOT NULL PRIMARY KEY,
+  name VARCHAR(100) NOT NULL UNIQUE,
+  description VARCHAR(255) NULL,
+  is_default TINYINT(1) NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS permissions (
+  id VARCHAR(36) NOT NULL PRIMARY KEY,
+  module VARCHAR(100) NOT NULL,
+  action VARCHAR(100) NOT NULL,
+  description VARCHAR(255) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_module_action (module, action)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS role_permissions (
+  id VARCHAR(36) NOT NULL PRIMARY KEY,
+  role_id VARCHAR(36) NOT NULL,
+  permission_id VARCHAR(36) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_role_perm (role_id, permission_id),
+  FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE,
+  FOREIGN KEY (permission_id) REFERENCES permissions(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS staff_roles (
+  id VARCHAR(36) NOT NULL PRIMARY KEY,
+  user_id VARCHAR(36) NOT NULL,
+  role_id VARCHAR(36) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_user_role (user_id, role_id),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS business_settings (
+  id VARCHAR(36) NOT NULL PRIMARY KEY,
+  company_name VARCHAR(255) NOT NULL,
+  gstin VARCHAR(20) NULL,
+  pan VARCHAR(20) NULL,
+  address TEXT NULL,
+  city VARCHAR(100) NULL,
+  state VARCHAR(100) NULL,
+  pincode VARCHAR(10) NULL,
+  phone VARCHAR(20) NULL,
+  email VARCHAR(255) NULL,
+  website VARCHAR(255) NULL,
+  logo VARCHAR(255) NULL,
+  bank_name VARCHAR(100) NULL,
+  bank_account VARCHAR(50) NULL,
+  bank_ifsc VARCHAR(20) NULL,
+  bank_branch VARCHAR(100) NULL,
+  invoice_prefix VARCHAR(10) NOT NULL DEFAULT 'INV',
+  po_prefix VARCHAR(10) NOT NULL DEFAULT 'PO',
+  quot_prefix VARCHAR(10) NOT NULL DEFAULT 'QT',
+  challan_prefix VARCHAR(10) NOT NULL DEFAULT 'DC',
+  terms_condition TEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS categories (
+  id VARCHAR(36) NOT NULL PRIMARY KEY,
+  name VARCHAR(100) NOT NULL UNIQUE,
+  description VARCHAR(255) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS brands (
+  id VARCHAR(36) NOT NULL PRIMARY KEY,
+  name VARCHAR(100) NOT NULL UNIQUE,
+  description VARCHAR(255) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS units (
+  id VARCHAR(36) NOT NULL PRIMARY KEY,
+  name VARCHAR(50) NOT NULL UNIQUE,
+  short_name VARCHAR(10) NOT NULL UNIQUE,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS products (
+  id VARCHAR(36) NOT NULL PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  sku VARCHAR(100) NULL UNIQUE,
+  barcode VARCHAR(100) NULL UNIQUE,
+  hsn_code VARCHAR(20) NULL,
+  sac_code VARCHAR(20) NULL,
+  description TEXT NULL,
+  category_id VARCHAR(36) NULL,
+  brand_id VARCHAR(36) NULL,
+  unit_id VARCHAR(36) NULL,
+  purchase_price DECIMAL(10,2) NOT NULL DEFAULT 0,
+  selling_price DECIMAL(10,2) NOT NULL DEFAULT 0,
+  mrp DECIMAL(10,2) NULL DEFAULT NULL,
+  gst_rate DECIMAL(5,2) NOT NULL DEFAULT 0,
+  gst_type VARCHAR(20) NOT NULL DEFAULT 'CGST_SGST',
+  opening_stock INT NOT NULL DEFAULT 0,
+  current_stock INT NOT NULL DEFAULT 0,
+  low_stock_alert INT NOT NULL DEFAULT 0,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (category_id) REFERENCES categories(id),
+  FOREIGN KEY (brand_id) REFERENCES brands(id),
+  FOREIGN KEY (unit_id) REFERENCES units(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS stock_movements (
+  id VARCHAR(36) NOT NULL PRIMARY KEY,
+  product_id VARCHAR(36) NOT NULL,
+  type VARCHAR(30) NOT NULL,
+  quantity INT NOT NULL,
+  balance_after INT NOT NULL,
+  reference_id VARCHAR(36) NULL,
+  reference_type VARCHAR(50) NULL,
+  note VARCHAR(255) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (product_id) REFERENCES products(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS customers (
+  id VARCHAR(36) NOT NULL PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  email VARCHAR(255) NULL,
+  mobile VARCHAR(20) NULL,
+  phone VARCHAR(20) NULL,
+  gstin VARCHAR(20) NULL,
+  pan VARCHAR(20) NULL,
+  billing_address TEXT NULL,
+  billing_city VARCHAR(100) NULL,
+  billing_state VARCHAR(100) NULL,
+  billing_pincode VARCHAR(10) NULL,
+  shipping_address TEXT NULL,
+  shipping_city VARCHAR(100) NULL,
+  shipping_state VARCHAR(100) NULL,
+  shipping_pincode VARCHAR(10) NULL,
+  credit_limit DECIMAL(10,2) NOT NULL DEFAULT 0,
+  opening_balance DECIMAL(10,2) NOT NULL DEFAULT 0,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  notes TEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS vendors (
+  id VARCHAR(36) NOT NULL PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  email VARCHAR(255) NULL,
+  mobile VARCHAR(20) NULL,
+  phone VARCHAR(20) NULL,
+  gstin VARCHAR(20) NULL,
+  pan VARCHAR(20) NULL,
+  address TEXT NULL,
+  city VARCHAR(100) NULL,
+  state VARCHAR(100) NULL,
+  pincode VARCHAR(10) NULL,
+  credit_limit DECIMAL(10,2) NOT NULL DEFAULT 0,
+  opening_balance DECIMAL(10,2) NOT NULL DEFAULT 0,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  notes TEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS quotations (
+  id VARCHAR(36) NOT NULL PRIMARY KEY,
+  quotation_no VARCHAR(50) NOT NULL UNIQUE,
+  customer_id VARCHAR(36) NOT NULL,
+  date DATETIME NOT NULL,
+  valid_until DATETIME NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
+  subtotal DECIMAL(10,2) NOT NULL,
+  discount_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  tax_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  total_amount DECIMAL(10,2) NOT NULL,
+  notes TEXT NULL,
+  terms TEXT NULL,
+  converted_to_id VARCHAR(36) NULL,
+  created_by_id VARCHAR(36) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (customer_id) REFERENCES customers(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS quotation_items (
+  id VARCHAR(36) NOT NULL PRIMARY KEY,
+  quotation_id VARCHAR(36) NOT NULL,
+  product_id VARCHAR(36) NOT NULL,
+  description VARCHAR(255) NULL,
+  quantity DECIMAL(10,3) NOT NULL,
+  rate DECIMAL(10,2) NOT NULL,
+  discount DECIMAL(5,2) NOT NULL DEFAULT 0,
+  gst_rate DECIMAL(5,2) NOT NULL DEFAULT 0,
+  gst_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  amount DECIMAL(10,2) NOT NULL,
+  FOREIGN KEY (quotation_id) REFERENCES quotations(id) ON DELETE CASCADE,
+  FOREIGN KEY (product_id) REFERENCES products(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS invoices (
+  id VARCHAR(36) NOT NULL PRIMARY KEY,
+  invoice_no VARCHAR(50) NOT NULL UNIQUE,
+  customer_id VARCHAR(36) NOT NULL,
+  date DATETIME NOT NULL,
+  due_date DATETIME NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
+  gst_type VARCHAR(20) NOT NULL DEFAULT 'CGST_SGST',
+  place_of_supply VARCHAR(100) NULL,
+  subtotal DECIMAL(10,2) NOT NULL,
+  discount_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  cgst_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  sgst_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  igst_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  tax_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  total_amount DECIMAL(10,2) NOT NULL,
+  paid_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  balance_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  payment_mode VARCHAR(20) NULL,
+  notes TEXT NULL,
+  terms TEXT NULL,
+  from_quotation_id VARCHAR(36) NULL,
+  from_challan_id VARCHAR(36) NULL,
+  created_by_id VARCHAR(36) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (customer_id) REFERENCES customers(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS invoice_items (
+  id VARCHAR(36) NOT NULL PRIMARY KEY,
+  invoice_id VARCHAR(36) NOT NULL,
+  product_id VARCHAR(36) NOT NULL,
+  description VARCHAR(255) NULL,
+  quantity DECIMAL(10,3) NOT NULL,
+  rate DECIMAL(10,2) NOT NULL,
+  discount DECIMAL(5,2) NOT NULL DEFAULT 0,
+  gst_rate DECIMAL(5,2) NOT NULL DEFAULT 0,
+  cgst_rate DECIMAL(5,2) NOT NULL DEFAULT 0,
+  sgst_rate DECIMAL(5,2) NOT NULL DEFAULT 0,
+  igst_rate DECIMAL(5,2) NOT NULL DEFAULT 0,
+  cgst_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  sgst_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  igst_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  gst_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  amount DECIMAL(10,2) NOT NULL,
+  FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE,
+  FOREIGN KEY (product_id) REFERENCES products(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS purchase_orders (
+  id VARCHAR(36) NOT NULL PRIMARY KEY,
+  po_no VARCHAR(50) NOT NULL UNIQUE,
+  vendor_id VARCHAR(36) NOT NULL,
+  date DATETIME NOT NULL,
+  expected_date DATETIME NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
+  subtotal DECIMAL(10,2) NOT NULL,
+  discount_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  tax_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  total_amount DECIMAL(10,2) NOT NULL,
+  notes TEXT NULL,
+  converted_to_id VARCHAR(36) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (vendor_id) REFERENCES vendors(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS purchase_order_items (
+  id VARCHAR(36) NOT NULL PRIMARY KEY,
+  purchase_order_id VARCHAR(36) NOT NULL,
+  product_id VARCHAR(36) NOT NULL,
+  description VARCHAR(255) NULL,
+  quantity DECIMAL(10,3) NOT NULL,
+  received_qty DECIMAL(10,3) NOT NULL DEFAULT 0,
+  rate DECIMAL(10,2) NOT NULL,
+  discount DECIMAL(5,2) NOT NULL DEFAULT 0,
+  gst_rate DECIMAL(5,2) NOT NULL DEFAULT 0,
+  gst_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  amount DECIMAL(10,2) NOT NULL,
+  FOREIGN KEY (purchase_order_id) REFERENCES purchase_orders(id) ON DELETE CASCADE,
+  FOREIGN KEY (product_id) REFERENCES products(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS purchases (
+  id VARCHAR(36) NOT NULL PRIMARY KEY,
+  purchase_no VARCHAR(50) NOT NULL UNIQUE,
+  vendor_id VARCHAR(36) NOT NULL,
+  date DATETIME NOT NULL,
+  due_date DATETIME NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
+  gst_type VARCHAR(20) NOT NULL DEFAULT 'CGST_SGST',
+  bill_no VARCHAR(50) NULL,
+  bill_date DATETIME NULL,
+  subtotal DECIMAL(10,2) NOT NULL,
+  discount_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  cgst_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  sgst_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  igst_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  tax_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  total_amount DECIMAL(10,2) NOT NULL,
+  paid_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  balance_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  payment_mode VARCHAR(20) NULL,
+  notes TEXT NULL,
+  from_po_id VARCHAR(36) NULL,
+  created_by_id VARCHAR(36) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (vendor_id) REFERENCES vendors(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS purchase_items (
+  id VARCHAR(36) NOT NULL PRIMARY KEY,
+  purchase_id VARCHAR(36) NOT NULL,
+  product_id VARCHAR(36) NOT NULL,
+  description VARCHAR(255) NULL,
+  quantity DECIMAL(10,3) NOT NULL,
+  rate DECIMAL(10,2) NOT NULL,
+  discount DECIMAL(5,2) NOT NULL DEFAULT 0,
+  gst_rate DECIMAL(5,2) NOT NULL DEFAULT 0,
+  cgst_rate DECIMAL(5,2) NOT NULL DEFAULT 0,
+  sgst_rate DECIMAL(5,2) NOT NULL DEFAULT 0,
+  igst_rate DECIMAL(5,2) NOT NULL DEFAULT 0,
+  cgst_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  sgst_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  igst_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  gst_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  amount DECIMAL(10,2) NOT NULL,
+  FOREIGN KEY (purchase_id) REFERENCES purchases(id) ON DELETE CASCADE,
+  FOREIGN KEY (product_id) REFERENCES products(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS delivery_challans (
+  id VARCHAR(36) NOT NULL PRIMARY KEY,
+  challan_no VARCHAR(50) NOT NULL UNIQUE,
+  customer_id VARCHAR(36) NOT NULL,
+  date DATETIME NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
+  subtotal DECIMAL(10,2) NOT NULL DEFAULT 0,
+  tax_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  total_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  notes TEXT NULL,
+  vehicle_no VARCHAR(30) NULL,
+  converted_to_id VARCHAR(36) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (customer_id) REFERENCES customers(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS challan_items (
+  id VARCHAR(36) NOT NULL PRIMARY KEY,
+  challan_id VARCHAR(36) NOT NULL,
+  product_id VARCHAR(36) NOT NULL,
+  description VARCHAR(255) NULL,
+  quantity DECIMAL(10,3) NOT NULL,
+  rate DECIMAL(10,2) NOT NULL,
+  gst_rate DECIMAL(5,2) NOT NULL DEFAULT 0,
+  gst_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  amount DECIMAL(10,2) NOT NULL,
+  FOREIGN KEY (challan_id) REFERENCES delivery_challans(id) ON DELETE CASCADE,
+  FOREIGN KEY (product_id) REFERENCES products(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS returnable_challans (
+  id VARCHAR(36) NOT NULL PRIMARY KEY,
+  challan_no VARCHAR(50) NOT NULL UNIQUE,
+  customer_id VARCHAR(36) NOT NULL,
+  date DATETIME NOT NULL,
+  return_date DATETIME NULL,
+  status VARCHAR(30) NOT NULL DEFAULT 'DRAFT',
+  subtotal DECIMAL(10,2) NOT NULL DEFAULT 0,
+  tax_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  total_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  notes TEXT NULL,
+  vehicle_no VARCHAR(30) NULL,
+  destination VARCHAR(100) NULL,
+  created_by_id VARCHAR(36) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (customer_id) REFERENCES customers(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS returnable_challan_items (
+  id VARCHAR(36) NOT NULL PRIMARY KEY,
+  challan_id VARCHAR(36) NOT NULL,
+  product_id VARCHAR(36) NOT NULL,
+  description VARCHAR(255) NULL,
+  quantity_issued DECIMAL(10,3) NOT NULL,
+  quantity_returned DECIMAL(10,3) NOT NULL DEFAULT 0,
+  rate DECIMAL(10,2) NOT NULL DEFAULT 0,
+  gst_rate DECIMAL(5,2) NOT NULL DEFAULT 0,
+  gst_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  FOREIGN KEY (challan_id) REFERENCES returnable_challans(id) ON DELETE CASCADE,
+  FOREIGN KEY (product_id) REFERENCES products(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS payments (
+  id VARCHAR(36) NOT NULL PRIMARY KEY,
+  type VARCHAR(20) NOT NULL,
+  reference_id VARCHAR(36) NOT NULL,
+  amount DECIMAL(10,2) NOT NULL,
+  payment_mode VARCHAR(20) NOT NULL,
+  payment_date DATETIME NOT NULL,
+  reference_no VARCHAR(50) NULL,
+  notes TEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS ledger_entries (
+  id VARCHAR(36) NOT NULL PRIMARY KEY,
+  customer_id VARCHAR(36) NULL,
+  vendor_id VARCHAR(36) NULL,
+  type VARCHAR(20) NOT NULL,
+  debit DECIMAL(10,2) NOT NULL DEFAULT 0,
+  credit DECIMAL(10,2) NOT NULL DEFAULT 0,
+  balance DECIMAL(10,2) NOT NULL,
+  reference_id VARCHAR(36) NULL,
+  reference_type VARCHAR(50) NULL,
+  reference_no VARCHAR(50) NULL,
+  date DATETIME NOT NULL,
+  description VARCHAR(255) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (customer_id) REFERENCES customers(id),
+  FOREIGN KEY (vendor_id) REFERENCES vendors(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- Default seed data — Admin user (username: virosgst / password: Viros@123)
+-- ============================================================
+INSERT IGNORE INTO users (id, name, email, password, role, status)
+VALUES (
+  'admin-user-id-0001-000000000001',
+  'Admin',
+  'virosgst',
+  '$2a$12$K/TPwswRjf/jJGcaGQw7su7yZJOpZ95OGmtOb0fm8s.PZDNQXSug6',
+  'ADMIN',
+  'ACTIVE'
+);
+
+INSERT IGNORE INTO business_settings (id, company_name, invoice_prefix, po_prefix, quot_prefix, challan_prefix)
+VALUES ('settings-id-000000000000001', 'My Company', 'INV', 'PO', 'QT', 'DC');
+
+-- Standard units
+INSERT IGNORE INTO units (id, name, short_name) VALUES
+  ('unit-pcs-000000000000000001', 'Pieces', 'PCS'),
+  ('unit-kg-0000000000000000001', 'Kilograms', 'KG'),
+  ('unit-gms-000000000000000001', 'Grams', 'GMS'),
+  ('unit-ltr-000000000000000001', 'Litres', 'LTR'),
+  ('unit-mtr-000000000000000001', 'Metres', 'MTR'),
+  ('unit-box-000000000000000001', 'Box', 'BOX'),
+  ('unit-dzn-000000000000000001', 'Dozen', 'DZN'),
+  ('unit-pr-0000000000000000001', 'Pair', 'PR'),
+  ('unit-set-000000000000000001', 'Set', 'SET'),
+  ('unit-nos-000000000000000001', 'Numbers', 'NOS'),
+  ('unit-bag-000000000000000001', 'Bags', 'BAG'),
+  ('unit-rol-000000000000000001', 'Rolls', 'ROL');

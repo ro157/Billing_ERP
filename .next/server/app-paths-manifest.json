@@ -1,0 +1,11 @@
+{
+  "/api/invoices/route": "app/api/invoices/route.js",
+  "/api/auth/[...nextauth]/route": "app/api/auth/[...nextauth]/route.js",
+  "/api/customers/route": "app/api/customers/route.js",
+  "/(dashboard)/staff/page": "app/(dashboard)/staff/page.js",
+  "/(dashboard)/roles/page": "app/(dashboard)/roles/page.js",
+  "/(dashboard)/reports/page": "app/(dashboard)/reports/page.js",
+  "/(dashboard)/customers/page": "app/(dashboard)/customers/page.js",
+  "/(dashboard)/purchase-orders/new/page": "app/(dashboard)/purchase-orders/new/page.js",
+  "/(dashboard)/dashboard/page": "app/(dashboard)/dashboard/page.js"
+}
