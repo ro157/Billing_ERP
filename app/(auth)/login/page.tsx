@@ -70,11 +70,11 @@ export default function LoginPage() {
         <form onSubmit={form.handleSubmit(onSubmit)}>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email" className="text-slate-200">Username</Label>
+              <Label htmlFor="email" className="text-slate-200">Email</Label>
               <Input
                 id="email"
                 type="text"
-                placeholder="virosgst"
+                placeholder="Enter your email"
                 className="bg-slate-700 border-slate-600 text-white placeholder:text-slate-400"
                 {...form.register('email')}
               />

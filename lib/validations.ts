@@ -35,6 +35,18 @@ export const roleSchema = z.object({
   permissions: z.array(z.string()),
 })
 
+const finiteNumber = (min: number, max?: number) =>
+  z.preprocess((val) => {
+    if (typeof val === 'number' && Number.isNaN(val)) return min
+    return val
+  }, max !== undefined ? z.number().min(min).max(max) : z.number().min(min))
+
+const finiteIntMin0 = z.preprocess((val) => {
+  if (val === undefined || val === null || val === '') return 0
+  if (typeof val === 'number' && Number.isNaN(val)) return 0
+  return val
+}, z.number().int().min(0))
+
 export const productSchema = z.object({
   name: z.string().min(2, 'Product name required').max(200),
   sku: z.string().optional(),
@@ -45,13 +57,30 @@ export const productSchema = z.object({
   categoryId: z.string().optional(),
   brandId: z.string().optional(),
   unitId: z.string().optional(),
-  purchasePrice: z.number().min(0),
-  sellingPrice: z.number().min(0),
-  mrp: z.number().min(0).optional(),
-  gstRate: z.number().min(0).max(100),
+  purchasePrice: finiteNumber(0),
+  sellingPrice: finiteNumber(0),
+  mrp: z.preprocess(
+    (val) => {
+      if (val === '' || val === null || val === undefined) return undefined
+      if (typeof val === 'number' && Number.isNaN(val)) return undefined
+      return val
+    },
+    z.number().min(0).optional()
+  ),
+  gstRate: finiteNumber(0, 100),
   gstType: z.enum(['CGST_SGST', 'IGST', 'EXEMPT']).default('CGST_SGST'),
-  openingStock: z.number().int().min(0).default(0),
-  lowStockAlert: z.number().int().min(0).default(0),
+  openingStock: finiteIntMin0,
+  lowStockAlert: finiteIntMin0,
+  discount: z
+    .preprocess(
+      (val) => {
+        if (val === '' || val === null || val === undefined) return null
+        const n = typeof val === 'number' ? val : Number(val)
+        return Number.isFinite(n) ? n : null
+      },
+      z.union([z.number().min(0).max(100), z.null()])
+    )
+    .optional(),
   isActive: z.boolean().default(true),
 })
 
@@ -188,13 +217,14 @@ export const businessSettingsSchema = z.object({
   phone: z.string().optional(),
   email: z.string().email().optional().or(z.literal('')),
   website: z.string().url().optional().or(z.literal('')),
+  logo: z.string().optional(),
   bankName: z.string().optional(),
   bankAccount: z.string().optional(),
   bankIfsc: z.string().optional(),
   bankBranch: z.string().optional(),
-  invoicePrefix: z.string().default('INV'),
-  poPrefix: z.string().default('PO'),
-  quotPrefix: z.string().default('QT'),
+  invoicePrefix: z.string().default('VE'),
+  quotationPrefix: z.string().default('QT'),
+  purchaseOrderPrefix: z.string().default('PO'),
   challanPrefix: z.string().default('DC'),
   termsCondition: z.string().optional(),
 })

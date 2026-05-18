@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import db from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
+import { ensureProductsDiscountColumn } from '@/lib/ensure-product-schema'
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const { error } = await requirePermission('inventory', 'view')
@@ -24,6 +25,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   if (error) return error
   try {
     const body = await req.json()
+    await ensureProductsDiscountColumn()
     const updates: string[] = []
     const values: any[] = []
     const fields: Record<string, string> = {
@@ -31,6 +33,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       description: 'description', categoryId: 'category_id', brandId: 'brand_id', unitId: 'unit_id',
       purchasePrice: 'purchase_price', sellingPrice: 'selling_price', mrp: 'mrp',
       gstRate: 'gst_rate', gstType: 'gst_type', lowStockAlert: 'low_stock_alert',
+      discount: 'discount',
     }
     for (const [key, col] of Object.entries(fields)) {
       if (key in body) { updates.push(`${col} = ?`); values.push(body[key] ?? null) }
@@ -46,7 +49,9 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       [params.id]
     ) as any[]
     return NextResponse.json(rows[0])
-  } catch {
+  } catch (err: unknown) {
+    const e = err as { code?: string; message?: string }
+    console.error('PUT /api/products/[id]:', e?.code, e?.message ?? err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

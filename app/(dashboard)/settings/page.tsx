@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ChangeEvent } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Button } from '@/components/ui/button'
@@ -14,47 +14,86 @@ import { useToast } from '@/hooks/use-toast'
 import { Save } from 'lucide-react'
 import { businessSettingsSchema, type BusinessSettingsInput } from '@/lib/validations'
 import { INDIAN_STATES } from '@/lib/utils'
+import { DocumentHeaderPreview } from '@/components/settings/document-header-preview'
+
 
 export default function SettingsPage() {
   const { toast } = useToast()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [logoPreview, setLogoPreview] = useState<string | null>(null)
+  const [logoFile, setLogoFile] = useState<File | null>(null)
   const { register, handleSubmit, setValue, watch, reset, formState: { errors } } = useForm<BusinessSettingsInput>({
     resolver: zodResolver(businessSettingsSchema),
-    defaultValues: { companyName: '', invoicePrefix: 'INV', quotPrefix: 'QT', poPrefix: 'PO', challanPrefix: 'DC' }
+    defaultValues: { companyName: '', invoicePrefix: 'VE', quotationPrefix: 'QT', purchaseOrderPrefix: 'PO', challanPrefix: 'DC' }
   })
+
+  // Watch all fields for real-time preview updates
+  const watchedValues = watch()
 
   useEffect(() => {
     fetch('/api/settings').then(r => r.json()).then(data => {
-      if (data) reset({
-        companyName: data.company_name || data.companyName || '',
-        gstin: data.gstin || '',
-        pan: data.pan || '',
-        address: data.address || '',
-        city: data.city || '',
-        state: data.state || '',
-        pincode: data.pincode || '',
-        phone: data.phone || '',
-        email: data.email || '',
-        website: data.website || '',
-        bankName: data.bank_name || data.bankName || '',
-        bankAccount: data.bank_account || data.bankAccount || '',
-        bankIfsc: data.bank_ifsc || data.bankIfsc || '',
-        bankBranch: data.bank_branch || data.bankBranch || '',
-        invoicePrefix: data.invoice_prefix || data.invoicePrefix || 'INV',
-        poPrefix: data.po_prefix || data.poPrefix || 'PO',
-        quotPrefix: data.quot_prefix || data.quotPrefix || 'QT',
-        challanPrefix: data.challan_prefix || data.challanPrefix || 'DC',
-        termsCondition: data.terms_condition || data.termsCondition || '',
-      })
+      if (data) {
+        reset({
+          companyName: data.company_name || data.companyName || '',
+          gstin: data.gstin || '',
+          pan: data.pan || '',
+          address: data.address || '',
+          city: data.city || '',
+          state: data.state || '',
+          pincode: data.pincode || '',
+          phone: data.phone || '',
+          email: data.email || '',
+          website: data.website || '',
+          bankName: data.bank_name || data.bankName || '',
+          bankAccount: data.bank_account || data.bankAccount || '',
+          bankIfsc: data.bank_ifsc || data.bankIfsc || '',
+          bankBranch: data.bank_branch || data.bankBranch || '',
+          invoicePrefix: data.invoice_prefix || data.invoicePrefix || 'VE',
+          quotationPrefix: data.quotation_prefix || data.quotationPrefix || 'QT',
+          purchaseOrderPrefix: data.purchase_order_prefix || data.purchaseOrderPrefix || 'PO',
+          challanPrefix: data.challan_prefix || data.challanPrefix || 'DC',
+          termsCondition: data.terms_condition || data.termsCondition || '',
+        })
+        setLogoPreview(data.logo || null)
+      }
       setLoading(false)
     })
   }, [reset])
 
+  const handleLogoChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    setLogoFile(file)
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setLogoPreview(reader.result)
+      }
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const fileToDataUrl = (file: File) => new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result === 'string') resolve(reader.result)
+      else reject(new Error('Failed to read file'))
+    }
+    reader.onerror = () => reject(new Error('Failed to read file'))
+    reader.readAsDataURL(file)
+  })
+
   const onSubmit = async (data: BusinessSettingsInput) => {
     setSaving(true)
     try {
-      const res = await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
+      const payload: any = { ...data }
+      if (logoFile) {
+        payload.logo = await fileToDataUrl(logoFile)
+      }
+
+      const res = await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       if (!res.ok) throw new Error('Failed')
       toast({ title: 'Settings saved' })
     } catch {
@@ -67,11 +106,27 @@ export default function SettingsPage() {
   if (loading) return <div className="text-center py-16 text-muted-foreground">Loading settings...</div>
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="space-y-6 max-w-5xl">
       <div>
         <h1 className="text-2xl font-bold">Business Settings</h1>
         <p className="text-muted-foreground">Configure your company information</p>
       </div>
+
+      {/* Document Header Preview */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Document Header Preview</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Live preview of your letterhead — updates as you edit company details below
+          </p>
+        </CardHeader>
+        <CardContent className="p-4 sm:p-6">
+          <DocumentHeaderPreview {...watchedValues} logoPreview={logoPreview} />
+          <p className="mt-3 text-center text-xs text-muted-foreground">
+            Invoice / quotation body appears below this header on printed documents
+          </p>
+        </CardContent>
+      </Card>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         <Card>
@@ -82,6 +137,22 @@ export default function SettingsPage() {
                 <Label>Company Name *</Label>
                 <Input {...register('companyName')} placeholder="Your Company Name" />
                 {errors.companyName && <p className="text-sm text-destructive">{errors.companyName.message}</p>}
+              </div>
+              <div className="space-y-2 col-span-2">
+                <Label>Company Icon</Label>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                    {logoPreview ? (
+                      <img src={logoPreview} alt="Company icon preview" className="h-full w-full object-contain" />
+                    ) : (
+                      <span className="text-xs text-slate-500">No icon selected</span>
+                    )}
+                  </div>
+                  <div className="flex-1 space-y-1">
+                    <Input type="file" accept="image/*" onChange={handleLogoChange} />
+                    <p className="text-sm text-muted-foreground">Upload a PNG, JPG, or SVG company icon.</p>
+                  </div>
+                </div>
               </div>
               <div className="space-y-2">
                 <Label>GSTIN</Label>
@@ -106,7 +177,12 @@ export default function SettingsPage() {
             </div>
             <div className="space-y-2">
               <Label>Address</Label>
-              <Textarea {...register('address')} placeholder="Street address" rows={2} />
+              <Textarea
+                {...register('address')}
+                placeholder={'25/2, Street -2, 1st Floor, Molarband Market,\nBeside Om TVS bike Showroom, Badarpur'}
+                rows={3}
+              />
+              <p className="text-xs text-muted-foreground">Use separate lines for each address line (city/state/pincode go in fields below).</p>
             </div>
             <div className="grid grid-cols-3 gap-4">
               <div className="space-y-2">
@@ -115,7 +191,7 @@ export default function SettingsPage() {
               </div>
               <div className="space-y-2">
                 <Label>State</Label>
-                <Select onValueChange={(v) => setValue('state', v)}>
+                <Select value={watchedValues.state || ''} onValueChange={(v) => setValue('state', v)}>
                   <SelectTrigger><SelectValue placeholder="Select state" /></SelectTrigger>
                   <SelectContent>
                     {INDIAN_STATES.map(s => <SelectItem key={s.code} value={s.name}>{s.name}</SelectItem>)}
@@ -160,15 +236,15 @@ export default function SettingsPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Invoice Prefix</Label>
-                <Input {...register('invoicePrefix')} placeholder="INV" />
+                <Input {...register('invoicePrefix')} placeholder="VE" />
               </div>
               <div className="space-y-2">
                 <Label>Quotation Prefix</Label>
-                <Input {...register('quotPrefix')} placeholder="QT" />
+                <Input {...register('quotationPrefix')} placeholder="QT" />
               </div>
               <div className="space-y-2">
                 <Label>Purchase Order Prefix</Label>
-                <Input {...register('poPrefix')} placeholder="PO" />
+                <Input {...register('purchaseOrderPrefix')} placeholder="PO" />
               </div>
               <div className="space-y-2">
                 <Label>Challan Prefix</Label>

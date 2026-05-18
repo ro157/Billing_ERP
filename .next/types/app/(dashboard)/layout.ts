@@ -1,4 +1,4 @@
-// File: /Users/rupeshh04/Desktop/VIros-GST-Billing/app/(dashboard)/layout.tsx
+// File: C:\Users\VIROS\Desktop\Projects\virosgstbilling\app\(dashboard)\layout.tsx
 import * as entry from '../../../../app/(dashboard)/layout.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

@@ -72,6 +72,19 @@
   border-radius: 999px;
 }
 
+@layer utilities {
+  /* Hide number input spin buttons (Chrome, Safari, Firefox) */
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+}
+
 /* Print styles */
 @media print {
   .no-print {

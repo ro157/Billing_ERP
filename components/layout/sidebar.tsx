@@ -148,7 +148,7 @@ export function Sidebar({ open }: SidebarProps) {
   return (
     <aside
       className={cn(
-        'fixed left-0 top-0 z-40 h-screen bg-slate-900 text-white transition-all duration-300',
+        'fixed left-0 top-0 z-40 flex h-screen flex-col bg-slate-900 text-white transition-all duration-300',
         open ? 'w-64' : 'w-16'
       )}
     >
@@ -161,7 +161,7 @@ export function Sidebar({ open }: SidebarProps) {
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto py-4 px-2">
+      <nav className="flex-1 min-h-0 overflow-y-auto py-4 px-2">
         <ul className="space-y-1">
           {navItems.filter(isVisible).map((item) => {
             const isActive = pathname === item.href || pathname.startsWith(item.href + '/')

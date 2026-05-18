@@ -35,6 +35,7 @@ interface Product {
   unit_name: string | null
   unit_short_name: string | null
   brand_name: string | null
+  discount: number | string | null
 }
 
 interface SelectOption { id: string; name: string }
@@ -63,7 +64,8 @@ export default function InventoryPage() {
     resolver: zodResolver(productSchema),
     defaultValues: {
       name: '', sku: '', hsnCode: '', sellingPrice: 0, purchasePrice: 0,
-      openingStock: 0, gstRate: 18, gstType: 'CGST_SGST' as const, lowStockAlert: 0, isActive: true, categoryId: '', unitId: '',
+      openingStock: 0, gstRate: 18, gstType: 'CGST_SGST' as const, lowStockAlert: 0, discount: null,
+      isActive: true, categoryId: '', unitId: '',
     },
   })
 
@@ -97,7 +99,7 @@ export default function InventoryPage() {
 
   const openNew = () => {
     setEditing(null)
-    form.reset({ name: '', sku: '', hsnCode: '', sellingPrice: 0, purchasePrice: 0, openingStock: 0, gstRate: 18, gstType: 'CGST_SGST' as const, lowStockAlert: 0, isActive: true, categoryId: '', unitId: '' })
+    form.reset({ name: '', sku: '', hsnCode: '', sellingPrice: 0, purchasePrice: 0, openingStock: 0, gstRate: 18, gstType: 'CGST_SGST' as const, lowStockAlert: 0, discount: null, isActive: true, categoryId: '', unitId: '' })
     setDialogOpen(true)
   }
 
@@ -113,6 +115,10 @@ export default function InventoryPage() {
       gstRate: Number(product.gst_rate),
       gstType: product.gst_type as 'CGST_SGST' | 'IGST' | 'EXEMPT',
       lowStockAlert: product.low_stock_alert,
+      discount:
+        product.discount === null || product.discount === undefined || product.discount === ''
+          ? null
+          : Number(product.discount),
       isActive: product.is_active === 1,
       categoryId: product.category_id || '',
       unitId: product.unit_id || '',
@@ -301,12 +307,13 @@ export default function InventoryPage() {
       </Card>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
+        <DialogContent className="max-h-[min(90vh,calc(100dvh-2rem))] max-w-2xl !flex !flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+          <DialogHeader className="shrink-0 space-y-1.5 px-6 pb-2 pt-6 pr-14 text-left">
             <DialogTitle>{editing ? 'Edit Product' : 'Add Product'}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={form.handleSubmit(onSubmit)}>
-            <div className="grid grid-cols-2 gap-4 py-4">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="flex min-h-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-2">
+              <div className="grid grid-cols-2 gap-4 pb-2">
               <div className="col-span-2 space-y-2">
                 <Label>Product Name *</Label>
                 <Input {...form.register('name')} />
@@ -322,11 +329,11 @@ export default function InventoryPage() {
               </div>
               <div className="space-y-2">
                 <Label>Selling Price (₹) *</Label>
-                <Input type="number" step="0.01" {...form.register('sellingPrice', { valueAsNumber: true })} />
+                <Input type="number" step="0.01" className="no-spinner" {...form.register('sellingPrice', { valueAsNumber: true })} />
               </div>
               <div className="space-y-2">
                 <Label>Purchase Price (₹) *</Label>
-                <Input type="number" step="0.01" {...form.register('purchasePrice', { valueAsNumber: true })} />
+                <Input type="number" step="0.01" className="no-spinner" {...form.register('purchasePrice', { valueAsNumber: true })} />
               </div>
               <div className="space-y-2">
                 <Label>GST Rate (%) *</Label>
@@ -340,7 +347,7 @@ export default function InventoryPage() {
               {!editing && (
                 <div className="space-y-2">
                   <Label>Opening Stock</Label>
-                  <Input type="number" {...form.register('openingStock', { valueAsNumber: true })} />
+                  <Input type="number" className="no-spinner" {...form.register('openingStock', { valueAsNumber: true })} />
                 </div>
               )}
               <div className="space-y-2">
@@ -361,8 +368,43 @@ export default function InventoryPage() {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-2">
+                <Label>Low stock alert quantity</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step={1}
+                  className="no-spinner"
+                  {...form.register('lowStockAlert', { valueAsNumber: true })}
+                />
+                {form.formState.errors.lowStockAlert && (
+                  <p className="text-destructive text-xs">{form.formState.errors.lowStockAlert.message}</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label>Discount (%)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step="0.01"
+                  placeholder="Optional"
+                  className="no-spinner"
+                  {...form.register('discount', {
+                    setValueAs: (v) => {
+                      if (v === '' || v === null || v === undefined) return null
+                      const n = Number(v)
+                      return Number.isFinite(n) ? n : null
+                    },
+                  })}
+                />
+                {form.formState.errors.discount && (
+                  <p className="text-destructive text-xs">{form.formState.errors.discount.message as string}</p>
+                )}
+              </div>
+              </div>
             </div>
-            <DialogFooter>
+            <DialogFooter className="shrink-0 gap-2 border-t bg-background px-6 py-4">
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
               <Button type="submit" disabled={saving}>{saving ? 'Saving...' : editing ? 'Update' : 'Create'}</Button>
             </DialogFooter>

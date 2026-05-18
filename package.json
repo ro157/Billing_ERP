@@ -38,6 +38,7 @@
     "mysql2": "^3.22.3",
     "next": "14.2.5",
     "next-auth": "^4.24.7",
+    "nodemailer": "^7.0.13",
     "react": "^18",
     "react-dom": "^18",
     "react-hook-form": "^7.53.0",
@@ -51,6 +52,7 @@
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
+    "@types/nodemailer": "^8.0.0",
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "eslint": "^8",

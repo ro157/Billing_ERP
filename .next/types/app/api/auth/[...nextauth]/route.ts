@@ -1,4 +1,4 @@
-// File: /Users/rupeshh04/Desktop/VIros-GST-Billing/app/api/auth/[...nextauth]/route.ts
+// File: C:\Users\VIROS\Desktop\Projects\virosgstbilling\app\api\auth\[...nextauth]\route.ts
 import * as entry from '../../../../../../app/api/auth/[...nextauth]/route.js'
 import type { NextRequest } from 'next/server.js'
 

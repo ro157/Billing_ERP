@@ -1,0 +1,153 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Loader2 } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+
+export default function ResetPasswordPage() {
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const email = searchParams.get('email') || '';
+  const otp = searchParams.get('otp') || '';
+  const { toast } = useToast();
+
+  useEffect(() => {
+    if (!email || !otp) {
+      router.push('/forgot-password');
+    }
+  }, [email, otp, router]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+
+    if (newPassword !== confirmPassword) {
+      toast({
+        title: 'Error',
+        description: 'Passwords do not match',
+        variant: 'destructive',
+      });
+      setLoading(false);
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      toast({
+        title: 'Error',
+        description: 'Password must be at least 6 characters long',
+        variant: 'destructive',
+      });
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, otp, newPassword }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        toast({
+          title: 'Success',
+          description: 'Password reset successfully. Redirecting to login...',
+        });
+        setTimeout(() => {
+          router.push('/login');
+        }, 2000);
+      } else {
+        toast({
+          title: 'Error',
+          description: data.error || 'Something went wrong',
+          variant: 'destructive',
+        });
+      }
+    } catch (err) {
+      toast({
+        title: 'Error',
+        description: 'Network error. Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!email || !otp) {
+    return null;
+  }
+
+  return (
+    <div className="w-full max-w-md px-4">
+      <Card className="border-slate-700 bg-slate-800/50 backdrop-blur">
+        <CardHeader>
+          <CardTitle className="text-white text-xl">Reset Password</CardTitle>
+          <CardDescription className="text-slate-400">
+            Enter your new password
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="newPassword" className="text-slate-200">New Password</Label>
+              <Input
+                id="newPassword"
+                type="password"
+                placeholder="Enter new password"
+                className="bg-slate-700 border-slate-600 text-white placeholder:text-slate-400"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="confirmPassword" className="text-slate-200">Confirm Password</Label>
+              <Input
+                id="confirmPassword"
+                type="password"
+                placeholder="Confirm new password"
+                className="bg-slate-700 border-slate-600 text-white placeholder:text-slate-400"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+              />
+            </div>
+
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Reset Password
+            </Button>
+          </form>
+
+          <div className="mt-4 text-center">
+            <Button
+              variant="link"
+              onClick={() => router.push('/login')}
+              className="text-sm text-blue-400 hover:text-blue-300"
+            >
+              Back to Login
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <p className="text-center text-slate-500 text-sm mt-6">
+        &copy; {new Date().getFullYear()} Viros GST Billing. All rights reserved.
+      </p>
+    </div>
+  );
+}
