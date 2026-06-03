@@ -214,6 +214,15 @@ export const purchaseSchema = z.object({
   items: z.array(invoiceItemSchema).min(1, 'At least one item required'),
 })
 
+export const quotationItemSchema = z.object({
+  productId: z.string().min(1, 'Product required'),
+  description: z.string().optional(),
+  quantity: z.number().positive('Quantity must be positive'),
+  rate: z.number().positive('Rate must be positive'),
+  discount: z.number().min(0, 'Discount cannot be negative').default(0),
+  gstRate: z.number().min(0).max(100).default(0),
+})
+
 export const quotationSchema = z.object({
   customerId: z.string().min(1, 'Customer required'),
   date: z.string().or(z.date()),
@@ -221,7 +230,8 @@ export const quotationSchema = z.object({
   gstType: z.enum(['CGST_SGST', 'IGST', 'EXEMPT']).default('CGST_SGST'),
   notes: z.string().optional(),
   terms: z.string().optional(),
-  items: z.array(invoiceItemSchema).min(1, 'At least one item required'),
+  roundOff: z.number().default(0),
+  items: z.array(quotationItemSchema).min(1, 'At least one item required'),
 })
 
 export const challanSchema = z.object({

@@ -37,12 +37,22 @@ export function calculateGST(
   if (gstType === 'EXEMPT') {
     return { cgst: 0, sgst: 0, igst: 0, total: 0 }
   }
-  const totalGst = (amount * gstRate) / 100
+  const totalGst = roundToTwo((amount * gstRate) / 100)
   if (gstType === 'IGST') {
     return { cgst: 0, sgst: 0, igst: totalGst, total: totalGst }
   }
-  const halfGst = totalGst / 2
-  return { cgst: halfGst, sgst: halfGst, igst: 0, total: totalGst }
+  const cgst = roundToTwo(totalGst / 2)
+  const sgst = roundToTwo(totalGst - cgst)
+  return { cgst, sgst, igst: 0, total: totalGst }
+}
+
+/** Round to nearest rupee: .49 and below down, .50 and above up */
+export function roundToNearestRupee(amount: number): number {
+  return Math.round(amount)
+}
+
+export function computeRoundOff(amount: number): number {
+  return roundToTwo(roundToNearestRupee(amount) - roundToTwo(amount))
 }
 
 export function calculateItemAmount(

@@ -2,16 +2,17 @@ import { NextRequest, NextResponse } from 'next/server'
 import db from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { quotationSchema } from '@/lib/validations'
+import { ensureQuotationSchema } from '@/lib/ensure-quotation-schema'
+import { calculateGST, computeRoundOff, roundToNearestRupee, roundToTwo } from '@/lib/utils'
 import { randomUUID } from 'crypto'
 
 function computeItemTotals(item: any, gstType = 'CGST_SGST') {
-  const taxable = item.quantity * item.rate * (1 - (item.discount || 0) / 100)
-  let cgst = 0, sgst = 0, igst = 0
-  if (gstType === 'CGST_SGST') { cgst = taxable * item.gstRate / 200; sgst = cgst }
-  else if (gstType === 'IGST') { igst = taxable * item.gstRate / 100 }
-  const total = taxable + cgst + sgst + igst
-  const discAmt = item.quantity * item.rate - taxable
-  return { taxable, cgst, sgst, igst, total, discAmt }
+  const taxable = roundToTwo(item.quantity * item.rate)
+  const gst = calculateGST(taxable, item.gstRate || 0, gstType)
+  const totalWithGst = roundToTwo(taxable + gst.total)
+  const discAmt = roundToTwo(Math.min(Math.max(0, Number(item.discount) || 0), totalWithGst))
+  const total = roundToTwo(totalWithGst - discAmt)
+  return { taxable, cgst: gst.cgst, sgst: gst.sgst, igst: gst.igst, total, discAmt }
 }
 
 export async function GET(req: NextRequest) {
@@ -49,6 +50,7 @@ export async function POST(req: NextRequest) {
 
   const conn = await db.getConnection()
   try {
+    await ensureQuotationSchema()
     const body = await req.json()
     const data = quotationSchema.parse(body)
     await conn.beginTransaction()
@@ -69,14 +71,16 @@ export async function POST(req: NextRequest) {
       totalCgst += t.cgst; totalSgst += t.sgst; totalIgst += t.igst; grandTotal += t.total
       return { ...item, ...t }
     })
+    const roundOff = computeRoundOff(grandTotal)
+    grandTotal = roundToNearestRupee(grandTotal)
 
     const id = randomUUID()
     await conn.execute(
       `INSERT INTO quotations (id, quotation_no, customer_id, date, valid_until, subtotal,
-        discount_amount, tax_amount, total_amount, notes, terms, status)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+        discount_amount, tax_amount, round_off, total_amount, notes, terms, status)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [id, quotationNo, data.customerId, data.date, data.validUntil || null,
-       subtotal, totalDiscount, totalCgst + totalSgst + totalIgst, grandTotal,
+       subtotal, totalDiscount, totalCgst + totalSgst + totalIgst, roundOff, grandTotal,
        data.notes || null, data.terms || null, 'DRAFT']
     )
 
