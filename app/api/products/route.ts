@@ -12,15 +12,23 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const search = searchParams.get('search') || ''
   const categoryId = searchParams.get('categoryId')
+  const status = searchParams.get('status') ?? 'active'
   const page = parseInt(searchParams.get('page') || '1')
   const limit = parseInt(searchParams.get('limit') || '20')
   const offset = (page - 1) * limit
 
-  const conditions: string[] = ['p.is_active = 1']
+  const conditions: string[] = []
   const params: any[] = []
-  if (search) { conditions.push('(p.name LIKE ? OR p.sku LIKE ? OR p.hsn_code LIKE ?)'); const s = `%${search}%`; params.push(s, s, s) }
+  if (status === 'active') conditions.push('p.is_active = 1')
+  else if (status === 'inactive') conditions.push('p.is_active = 0')
+  // status === 'all' => no is_active filter
+  if (search) {
+    conditions.push('(p.name LIKE ? OR p.sku LIKE ? OR p.hsn_code LIKE ? OR p.sac_code LIKE ?)')
+    const s = `%${search}%`
+    params.push(s, s, s, s)
+  }
   if (categoryId) { conditions.push('p.category_id = ?'); params.push(categoryId) }
-  const where = 'WHERE ' + conditions.join(' AND ')
+  const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : ''
 
   const query = `SELECT p.*, c.name as category_name, b.name as brand_name, u.name as unit_name, u.short_name as unit_short_name
      FROM products p

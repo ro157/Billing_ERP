@@ -3,7 +3,9 @@ import { persist } from 'zustand/middleware'
 
 interface AppState {
   sidebarOpen: boolean
+  mobileSidebarOpen: boolean
   setSidebarOpen: (open: boolean) => void
+  setMobileSidebarOpen: (open: boolean) => void
   toggleSidebar: () => void
 }
 
@@ -11,11 +13,14 @@ export const useAppStore = create<AppState>()(
   persist(
     (set) => ({
       sidebarOpen: true,
+      mobileSidebarOpen: false,
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
+      setMobileSidebarOpen: (open) => set({ mobileSidebarOpen: open }),
       toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
     }),
     {
       name: 'app-store',
+      partialize: (state) => ({ sidebarOpen: state.sidebarOpen }),
     }
   )
 )

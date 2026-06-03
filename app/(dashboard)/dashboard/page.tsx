@@ -92,14 +92,14 @@ export default function DashboardPage() {
   })()
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6 min-w-0">
       <div>
-        <h1 className="text-2xl font-bold">Dashboard</h1>
-        <p className="text-muted-foreground">Business overview for today</p>
+        <h1 className="text-xl md:text-2xl font-bold">Dashboard</h1>
+        <p className="text-sm text-muted-foreground">Business overview for today</p>
       </div>
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         <StatCard
           title="Sales Today"
           value={formatCurrency(stats.salesToday.amount)}
@@ -133,7 +133,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Secondary Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         <StatCard
           title="Pending Quotations"
           value={String(stats.pendingQuotations)}
@@ -162,7 +162,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Sales vs Purchases (Last 6 Months)</CardTitle>

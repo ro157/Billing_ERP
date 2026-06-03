@@ -2,7 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import db from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { vendorSchema } from '@/lib/validations'
+import { ensureVendorContactPersonColumn } from '@/lib/ensure-vendor-schema'
 import { randomUUID } from 'crypto'
+
+function optionalToNull(value: string | undefined | null): string | null {
+  if (value === undefined || value === null) return null
+  const trimmed = value.trim()
+  return trimmed === '' ? null : trimmed
+}
 
 export async function GET(req: NextRequest) {
   const { error } = await requirePermission('vendors', 'view')
@@ -17,9 +24,9 @@ export async function GET(req: NextRequest) {
   let whereClause = ''
   let params: any[] = []
   if (search) {
-    whereClause = 'WHERE (name LIKE ? OR email LIKE ? OR mobile LIKE ? OR gstin LIKE ?)'
+    whereClause = 'WHERE (name LIKE ? OR email LIKE ? OR mobile LIKE ? OR phone LIKE ? OR gstin LIKE ? OR contact_person LIKE ?)'
     const s = `%${search}%`
-    params = [s, s, s, s]
+    params = [s, s, s, s, s, s]
   }
 
   const [rows] = await db.execute(
@@ -37,17 +44,18 @@ export async function POST(req: NextRequest) {
   const { error } = await requirePermission('vendors', 'create')
   if (error) return error
   try {
+    await ensureVendorContactPersonColumn()
     const body = await req.json()
     const data = vendorSchema.parse(body)
     const id = randomUUID()
     await db.execute(
-      `INSERT INTO vendors (id, name, email, mobile, phone, gstin, pan,
+      `INSERT INTO vendors (id, name, contact_person, email, mobile, phone, gstin, pan,
         address, city, state, pincode, credit_limit, opening_balance, is_active, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, data.name, data.email || null, data.mobile || null, data.phone || null,
-       data.gstin || null, data.pan || null, data.address || null,
-       data.city || null, data.state || null, data.pincode || null,
-       data.creditLimit, data.openingBalance, data.isActive ? 1 : 0, data.notes || null]
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, data.name, data.contactPerson, optionalToNull(data.email), optionalToNull(data.mobile), data.phone,
+       data.gstin, optionalToNull(data.pan), data.address,
+       optionalToNull(data.city), optionalToNull(data.state), optionalToNull(data.pincode),
+       data.creditLimit, data.openingBalance, data.isActive ? 1 : 0, optionalToNull(data.notes)]
     )
     const [rows] = await db.execute('SELECT * FROM vendors WHERE id = ?', [id]) as any[]
     return NextResponse.json(rows[0], { status: 201 })

@@ -85,13 +85,32 @@ export const productSchema = z.object({
 })
 
 export const customerSchema = z.object({
-  name: z.string().min(2, 'Name required').max(200),
+  name: z.string().min(2, 'Customer name required').max(200),
+  contactPerson: z.preprocess(
+    (v) => (typeof v === 'string' ? v.trim() : v),
+    z.string().min(1, 'Contact person required').max(200)
+  ),
   email: z.string().email().optional().or(z.literal('')),
   mobile: z.string().optional(),
-  phone: z.string().optional(),
-  gstin: z.string().regex(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/, 'Invalid GSTIN').optional().or(z.literal('')),
-  pan: z.string().regex(/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/, 'Invalid PAN').optional().or(z.literal('')),
-  billingAddress: z.string().optional(),
+  phone: z.preprocess(
+    (v) => (typeof v === 'string' ? v.trim() : v),
+    z.string().min(1, 'Phone required')
+  ),
+  gstin: z.preprocess(
+    (v) => (typeof v === 'string' ? v.trim().toUpperCase() : v),
+    z
+      .string()
+      .min(1, 'GSTIN required')
+      .regex(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/, 'Invalid GSTIN')
+  ),
+  pan: z.preprocess(
+    (v) => (typeof v === 'string' ? v.trim().toUpperCase() : v),
+    z.string().regex(/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/, 'Invalid PAN').optional().or(z.literal(''))
+  ),
+  billingAddress: z.preprocess(
+    (v) => (typeof v === 'string' ? v.trim() : v),
+    z.string().min(1, 'Address required')
+  ),
   billingCity: z.string().optional(),
   billingState: z.string().optional(),
   billingPincode: z.string().optional(),
@@ -106,13 +125,32 @@ export const customerSchema = z.object({
 })
 
 export const vendorSchema = z.object({
-  name: z.string().min(2, 'Name required').max(200),
+  name: z.string().min(2, 'Vendor name required').max(200),
+  contactPerson: z.preprocess(
+    (v) => (typeof v === 'string' ? v.trim() : v),
+    z.string().min(1, 'Contact person required').max(200)
+  ),
   email: z.string().email().optional().or(z.literal('')),
   mobile: z.string().optional(),
-  phone: z.string().optional(),
-  gstin: z.string().regex(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/, 'Invalid GSTIN').optional().or(z.literal('')),
-  pan: z.string().regex(/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/, 'Invalid PAN').optional().or(z.literal('')),
-  address: z.string().optional(),
+  phone: z.preprocess(
+    (v) => (typeof v === 'string' ? v.trim() : v),
+    z.string().min(1, 'Phone required')
+  ),
+  gstin: z.preprocess(
+    (v) => (typeof v === 'string' ? v.trim().toUpperCase() : v),
+    z
+      .string()
+      .min(1, 'GSTIN required')
+      .regex(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/, 'Invalid GSTIN')
+  ),
+  pan: z.preprocess(
+    (v) => (typeof v === 'string' ? v.trim().toUpperCase() : v),
+    z.string().regex(/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/, 'Invalid PAN').optional().or(z.literal(''))
+  ),
+  address: z.preprocess(
+    (v) => (typeof v === 'string' ? v.trim() : v),
+    z.string().min(1, 'Address required')
+  ),
   city: z.string().optional(),
   state: z.string().optional(),
   pincode: z.string().optional(),

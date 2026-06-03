@@ -4,6 +4,12 @@ import { requirePermission } from '@/lib/api-auth'
 import { customerSchema } from '@/lib/validations'
 import { randomUUID } from 'crypto'
 
+function optionalToNull(value: string | undefined | null): string | null {
+  if (value === undefined || value === null) return null
+  const trimmed = value.trim()
+  return trimmed === '' ? null : trimmed
+}
+
 export async function GET(req: NextRequest) {
   const { error } = await requirePermission('customers', 'view')
   if (error) return error
@@ -17,9 +23,9 @@ export async function GET(req: NextRequest) {
   let whereClause = ''
   let params: any[] = []
   if (search) {
-    whereClause = 'WHERE (name LIKE ? OR email LIKE ? OR mobile LIKE ? OR gstin LIKE ?)'
+    whereClause = 'WHERE (name LIKE ? OR email LIKE ? OR mobile LIKE ? OR phone LIKE ? OR gstin LIKE ? OR contact_person LIKE ?)'
     const s = `%${search}%`
-    params = [s, s, s, s]
+    params = [s, s, s, s, s, s]
   }
 
   const [rows] = await db.execute(
@@ -41,13 +47,13 @@ export async function POST(req: NextRequest) {
     const data = customerSchema.parse(body)
     const id = randomUUID()
     await db.execute(
-      `INSERT INTO customers (id, name, email, mobile, phone, gstin, pan,
+      `INSERT INTO customers (id, name, contact_person, email, mobile, phone, gstin, pan,
         billing_address, billing_city, billing_state, billing_pincode,
         shipping_address, shipping_city, shipping_state, shipping_pincode,
         credit_limit, opening_balance, is_active, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, data.name, data.email || null, data.mobile || null, data.phone || null,
-       data.gstin || null, data.pan || null, data.billingAddress || null,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, data.name, data.contactPerson, data.email || null, data.mobile || null, data.phone || null,
+       data.gstin || null, optionalToNull(data.pan), data.billingAddress || null,
        data.billingCity || null, data.billingState || null, data.billingPincode || null,
        data.shippingAddress || null, data.shippingCity || null, data.shippingState || null,
        data.shippingPincode || null, data.creditLimit, data.openingBalance, data.isActive ? 1 : 0, data.notes || null]

@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import db from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
+import { vendorSchema } from '@/lib/validations'
+import { ensureVendorContactPersonColumn } from '@/lib/ensure-vendor-schema'
+
+function optionalToNull(value: string | undefined | null): string | null {
+  if (value === undefined || value === null) return null
+  const trimmed = value.trim()
+  return trimmed === '' ? null : trimmed
+}
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const { error } = await requirePermission('vendors', 'view')
@@ -22,25 +30,41 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   const { error } = await requirePermission('vendors', 'edit')
   if (error) return error
   try {
+    await ensureVendorContactPersonColumn()
     const body = await req.json()
-    const updates: string[] = []
-    const values: any[] = []
-    const fields: Record<string, string> = {
-      name: 'name', email: 'email', mobile: 'mobile', phone: 'phone',
-      gstin: 'gstin', pan: 'pan', address: 'address', city: 'city',
-      state: 'state', pincode: 'pincode', creditLimit: 'credit_limit',
-      openingBalance: 'opening_balance', notes: 'notes',
-    }
-    for (const [key, col] of Object.entries(fields)) {
-      if (key in body) { updates.push(`${col} = ?`); values.push(body[key] ?? null) }
-    }
-    if ('isActive' in body) { updates.push('is_active = ?'); values.push(body.isActive ? 1 : 0) }
-    if (updates.length > 0) {
-      await db.execute(`UPDATE vendors SET ${updates.join(', ')} WHERE id = ?`, [...values, params.id])
-    }
+    const data = vendorSchema.parse(body)
+
+    await db.execute(
+      `UPDATE vendors SET
+        name = ?, contact_person = ?, email = ?, mobile = ?, phone = ?, gstin = ?, pan = ?,
+        address = ?, city = ?, state = ?, pincode = ?,
+        credit_limit = ?, opening_balance = ?, is_active = ?, notes = ?
+       WHERE id = ?`,
+      [
+        data.name,
+        data.contactPerson,
+        optionalToNull(data.email),
+        optionalToNull(data.mobile),
+        data.phone,
+        data.gstin,
+        optionalToNull(data.pan),
+        data.address,
+        optionalToNull(data.city),
+        optionalToNull(data.state),
+        optionalToNull(data.pincode),
+        data.creditLimit,
+        data.openingBalance,
+        data.isActive ? 1 : 0,
+        optionalToNull(data.notes),
+        params.id,
+      ]
+    )
+
     const [rows] = await db.execute('SELECT * FROM vendors WHERE id = ?', [params.id]) as any[]
     return NextResponse.json(rows[0])
-  } catch {
+  } catch (err: unknown) {
+    const e = err as { name?: string; errors?: unknown }
+    if (e?.name === 'ZodError') return NextResponse.json({ error: e.errors }, { status: 400 })
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

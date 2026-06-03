@@ -9,7 +9,7 @@ import Link from 'next/link'
 import { useState, useRef, useEffect } from 'react'
 
 export function Header() {
-  const { toggleSidebar } = useAppStore()
+  const { toggleSidebar, mobileSidebarOpen, setMobileSidebarOpen } = useAppStore()
   const { data: session } = useSession()
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -24,14 +24,22 @@ export function Header() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  const handleMenuClick = () => {
+    if (typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches) {
+      setMobileSidebarOpen(!mobileSidebarOpen)
+    } else {
+      toggleSidebar()
+    }
+  }
+
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b bg-white px-4 shadow-sm">
-      <Button variant="ghost" size="icon" onClick={toggleSidebar}>
+    <header className="sticky top-0 z-20 flex h-14 md:h-16 items-center justify-between border-b bg-white px-3 md:px-4 shadow-sm">
+      <Button variant="ghost" size="icon" onClick={handleMenuClick} aria-label="Toggle menu">
         <Menu className="h-5 w-5" />
       </Button>
 
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon">
+      <div className="flex items-center gap-2 md:gap-3">
+        <Button variant="ghost" size="icon" aria-label="Notifications">
           <Bell className="h-5 w-5" />
         </Button>
 
@@ -50,7 +58,7 @@ export function Header() {
           </button>
 
           {dropdownOpen && (
-            <div className="absolute right-0 mt-2 w-48 rounded-md border bg-white shadow-lg">
+            <div className="absolute right-0 mt-2 w-48 rounded-md border bg-white shadow-lg z-50">
               <div className="p-2 border-b">
                 <p className="text-sm font-medium">{session?.user?.name}</p>
                 <p className="text-xs text-slate-500">{session?.user?.email}</p>
