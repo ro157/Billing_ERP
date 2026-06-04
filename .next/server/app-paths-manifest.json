@@ -1,10 +1,7 @@
 {
   "/api/auth/[...nextauth]/route": "app/api/auth/[...nextauth]/route.js",
-  "/api/dashboard/route": "app/api/dashboard/route.js",
-  "/(auth)/forgot-password/page": "app/(auth)/forgot-password/page.js",
-  "/(auth)/verify-otp/page": "app/(auth)/verify-otp/page.js",
-  "/(dashboard)/quotations/new/page": "app/(dashboard)/quotations/new/page.js",
-  "/(dashboard)/inventory/page": "app/(dashboard)/inventory/page.js",
-  "/(dashboard)/quotations/page": "app/(dashboard)/quotations/page.js",
-  "/(dashboard)/dashboard/page": "app/(dashboard)/dashboard/page.js"
+  "/api/products/route": "app/api/products/route.js",
+  "/api/vendors/route": "app/api/vendors/route.js",
+  "/api/purchases/route": "app/api/purchases/route.js",
+  "/(dashboard)/purchases/new/page": "app/(dashboard)/purchases/new/page.js"
 }

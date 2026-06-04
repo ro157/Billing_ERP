@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
   const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''
   const [rows] = await db.execute(
     `SELECT q.*, c.name as customer_name FROM quotations q LEFT JOIN customers c ON q.customer_id = c.id
-     ${where} ORDER BY q.date DESC LIMIT ? OFFSET ?`,
+     ${where} ORDER BY q.created_at DESC, q.quotation_no DESC LIMIT ? OFFSET ?`,
     [...params, limit, offset]
   ) as any[]
   const [countRows] = await db.execute(
@@ -55,8 +55,10 @@ export async function POST(req: NextRequest) {
     const data = quotationSchema.parse(body)
     await conn.beginTransaction()
 
-    const [settings] = await conn.execute('SELECT quot_prefix FROM business_settings LIMIT 1') as any[]
-    const prefix = settings[0]?.quot_prefix || 'QT'
+    const [settings] = await conn.execute(
+      'SELECT quotation_prefix FROM business_settings LIMIT 1'
+    ) as any[]
+    const prefix = settings[0]?.quotation_prefix || 'QT'
     const [last] = await conn.execute(
       'SELECT quotation_no FROM quotations WHERE quotation_no LIKE ? ORDER BY created_at DESC LIMIT 1', [`${prefix}%`]
     ) as any[]
@@ -103,6 +105,7 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     await conn.rollback()
     if (err.name === 'ZodError') return NextResponse.json({ error: err.errors }, { status: 400 })
+    console.error('POST /api/quotations:', err?.code, err?.message ?? err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   } finally {
     conn.release()

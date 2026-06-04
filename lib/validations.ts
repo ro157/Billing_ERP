@@ -200,6 +200,13 @@ export const purchaseOrderSchema = z.object({
   })).min(1),
 })
 
+export const purchaseItemSchema = invoiceItemSchema.omit({ discount: true }).extend({
+  discount: z.number().min(0, 'Discount cannot be negative').default(0),
+  roundOff: z.number().default(0),
+  taxableAmount: z.number().min(0).optional(),
+  amount: z.number().min(0).optional(),
+})
+
 export const purchaseSchema = z.object({
   vendorId: z.string().min(1, 'Vendor required'),
   date: z.string().or(z.date()),
@@ -207,11 +214,14 @@ export const purchaseSchema = z.object({
   gstType: z.enum(['CGST_SGST', 'IGST', 'EXEMPT']).default('CGST_SGST'),
   billNo: z.string().optional(),
   billDate: z.string().or(z.date()).optional(),
-  paymentMode: z.enum(['CASH', 'CHEQUE', 'BANK_TRANSFER', 'UPI', 'CARD', 'OTHER']).optional(),
+  paymentMode: z
+    .enum(['CASH', 'CHEQUE', 'BANK_TRANSFER', 'UPI', 'CARD', 'CREDIT', 'OTHER'])
+    .optional(),
   paidAmount: z.number().min(0).default(0),
   notes: z.string().optional(),
   fromPoId: z.string().optional(),
-  items: z.array(invoiceItemSchema).min(1, 'At least one item required'),
+  roundOff: z.number().default(0),
+  items: z.array(purchaseItemSchema).min(1, 'At least one item required'),
 })
 
 export const quotationItemSchema = z.object({

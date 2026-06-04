@@ -2,17 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import db from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { purchaseSchema } from '@/lib/validations'
+import { ensurePurchaseSchema } from '@/lib/ensure-purchase-schema'
+import { computePurchaseItemTotals } from '@/lib/purchase-totals'
+import { roundToTwo } from '@/lib/utils'
 import { randomUUID } from 'crypto'
-
-function computeItemTotals(item: any, gstType = 'CGST_SGST') {
-  const taxable = item.quantity * item.rate * (1 - (item.discount || 0) / 100)
-  let cgst = 0, sgst = 0, igst = 0
-  if (gstType === 'CGST_SGST') { cgst = taxable * item.gstRate / 200; sgst = cgst }
-  else if (gstType === 'IGST') { igst = taxable * item.gstRate / 100 }
-  const total = taxable + cgst + sgst + igst
-  const discAmt = item.quantity * item.rate - taxable
-  return { taxable, cgst, sgst, igst, total, discAmt }
-}
 
 export async function GET(req: NextRequest) {
   const { error } = await requirePermission('purchases', 'view')
@@ -51,40 +44,57 @@ export async function POST(req: NextRequest) {
 
   const conn = await db.getConnection()
   try {
+    await ensurePurchaseSchema()
     const body = await req.json()
     const data = purchaseSchema.parse(body)
     const gstType = data.gstType
     await conn.beginTransaction()
 
-    const [settings] = await conn.execute('SELECT po_prefix FROM business_settings LIMIT 1') as any[]
-    const prefix = settings[0]?.po_prefix || 'PUR'
+    const prefix = 'PUR'
     const [last] = await conn.execute(
-      'SELECT purchase_no FROM purchases ORDER BY created_at DESC LIMIT 1'
+      'SELECT purchase_no FROM purchases WHERE purchase_no LIKE ? ORDER BY created_at DESC LIMIT 1',
+      [`${prefix}%`]
     ) as any[]
     let nextNum = 1
     if (last[0]) { const m = last[0].purchase_no.match(/\d+$/); if (m) nextNum = parseInt(m[0]) + 1 }
     const purchaseNo = `${prefix}${String(nextNum).padStart(4, '0')}`
 
-    let subtotal = 0, totalDiscount = 0, totalTaxable = 0, totalCgst = 0, totalSgst = 0, totalIgst = 0, grandTotal = 0
+    let subtotal = 0,
+      totalDiscount = 0,
+      totalTaxable = 0,
+      totalCgst = 0,
+      totalSgst = 0,
+      totalIgst = 0,
+      totalRoundOff = 0,
+      grandTotal = 0
     const itemsWithTotals = data.items.map((item: any) => {
-      const t = computeItemTotals(item, gstType)
-      subtotal += item.quantity * item.rate; totalDiscount += t.discAmt; totalTaxable += t.taxable
-      totalCgst += t.cgst; totalSgst += t.sgst; totalIgst += t.igst; grandTotal += t.total
+      const t = computePurchaseItemTotals(item, gstType)
+      subtotal += item.quantity * item.rate
+      totalDiscount += t.discAmt
+      totalTaxable += t.taxable
+      totalCgst += t.cgst
+      totalSgst += t.sgst
+      totalIgst += t.igst
+      totalRoundOff += t.lineRoundOff
+      grandTotal += t.total
       return { ...item, ...t }
     })
+
+    const roundOff = roundToTwo(totalRoundOff)
+    const finalTotal = roundToTwo(grandTotal)
 
     const id = randomUUID()
     await conn.execute(
       `INSERT INTO purchases (id, purchase_no, vendor_id, date, due_date, gst_type, bill_no, bill_date,
-        subtotal, discount_amount, cgst_amount, sgst_amount, igst_amount, tax_amount, total_amount,
+        subtotal, discount_amount, cgst_amount, sgst_amount, igst_amount, tax_amount, round_off, total_amount,
         paid_amount, balance_amount, payment_mode, notes, status)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [id, purchaseNo, data.vendorId, data.date, data.dueDate || null,
        gstType, data.billNo || null, data.billDate || null,
-       subtotal, totalDiscount, totalCgst, totalSgst, totalIgst, totalCgst + totalSgst + totalIgst, grandTotal,
-       data.paidAmount, grandTotal - data.paidAmount,
+       subtotal, totalDiscount, totalCgst, totalSgst, totalIgst, totalCgst + totalSgst + totalIgst, roundOff, finalTotal,
+       data.paidAmount, finalTotal - data.paidAmount,
        data.paymentMode || null, data.notes || null,
-       grandTotal - data.paidAmount <= 0 ? 'PAID' : data.paidAmount > 0 ? 'PARTIAL' : 'PENDING']
+       finalTotal - data.paidAmount <= 0 ? 'PAID' : data.paidAmount > 0 ? 'PARTIAL' : 'PENDING']
     )
 
     for (const item of itemsWithTotals) {
@@ -117,7 +127,11 @@ export async function POST(req: NextRequest) {
     await conn.rollback()
     if (err.name === 'ZodError') return NextResponse.json({ error: err.errors }, { status: 400 })
     console.error(err)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    const message =
+      process.env.NODE_ENV === 'development' && err?.sqlMessage
+        ? err.sqlMessage
+        : 'Internal server error'
+    return NextResponse.json({ error: message }, { status: 500 })
   } finally {
     conn.release()
   }

@@ -53,8 +53,10 @@ export async function POST(req: NextRequest) {
     const data = purchaseOrderSchema.parse(body)
     await conn.beginTransaction()
 
-    const [settings] = await conn.execute('SELECT po_prefix FROM business_settings LIMIT 1') as any[]
-    const prefix = settings[0]?.po_prefix || 'PO'
+    const [settings] = await conn.execute(
+      'SELECT purchase_order_prefix FROM business_settings LIMIT 1'
+    ) as any[]
+    const prefix = settings[0]?.purchase_order_prefix || 'PO'
     const [last] = await conn.execute(
       'SELECT po_no FROM purchase_orders WHERE po_no LIKE ? ORDER BY created_at DESC LIMIT 1', [`${prefix}%`]
     ) as any[]
