@@ -165,7 +165,8 @@ export const invoiceItemSchema = z.object({
   description: z.string().optional(),
   quantity: z.number().positive('Quantity must be positive'),
   rate: z.number().positive('Rate must be positive'),
-  discount: z.number().min(0).max(100).default(0),
+  // Flat discount amount (₹) applied after GST on the line
+  discount: z.number().min(0).default(0),
   gstRate: z.number().min(0).max(100).default(0),
 })
 

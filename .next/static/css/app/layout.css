@@ -791,9 +791,6 @@ video {
 .h-20 {
   height: 5rem;
 }
-.h-3 {
-  height: 0.75rem;
-}
 .h-3\.5 {
   height: 0.875rem;
 }
@@ -896,12 +893,6 @@ video {
 .w-24 {
   width: 6rem;
 }
-.w-28 {
-  width: 7rem;
-}
-.w-3 {
-  width: 0.75rem;
-}
 .w-3\.5 {
   width: 0.875rem;
 }
@@ -932,6 +923,9 @@ video {
 .w-9 {
   width: 2.25rem;
 }
+.w-\[132px\] {
+  width: 132px;
+}
 .w-\[1px\] {
   width: 1px;
 }
@@ -944,8 +938,9 @@ video {
 .w-full {
   width: 100%;
 }
-.w-32 {
-  width: 8rem;
+.w-fit {
+  width: -moz-fit-content;
+  width: fit-content;
 }
 .min-w-0 {
   min-width: 0px;
@@ -973,6 +968,9 @@ video {
 }
 .max-w-6xl {
   max-width: 72rem;
+}
+.max-w-\[180px\] {
+  max-width: 180px;
 }
 .max-w-\[55\%\] {
   max-width: 55%;
@@ -1033,6 +1031,9 @@ video {
 }
 .cursor-default {
   cursor: default;
+}
+.cursor-not-allowed {
+  cursor: not-allowed;
 }
 .cursor-pointer {
   cursor: pointer;
@@ -1170,6 +1171,9 @@ video {
   border-top-width: calc(1px * calc(1 - var(--tw-divide-y-reverse)));
   border-bottom-width: calc(1px * var(--tw-divide-y-reverse));
 }
+.self-end {
+  align-self: flex-end;
+}
 .overflow-auto {
   overflow: auto;
 }
@@ -1255,6 +1259,10 @@ video {
 .border-destructive {
   border-color: hsl(var(--destructive));
 }
+.border-gray-300 {
+  --tw-border-opacity: 1;
+  border-color: rgb(209 213 219 / var(--tw-border-opacity, 1));
+}
 .border-input {
   border-color: hsl(var(--input));
 }
@@ -1314,6 +1322,10 @@ video {
 }
 .bg-destructive {
   background-color: hsl(var(--destructive));
+}
+.bg-emerald-100 {
+  --tw-bg-opacity: 1;
+  background-color: rgb(209 250 229 / var(--tw-bg-opacity, 1));
 }
 .bg-green-100 {
   --tw-bg-opacity: 1;
@@ -1654,9 +1666,6 @@ video {
 .font-semibold {
   font-weight: 600;
 }
-.font-normal {
-  font-weight: 400;
-}
 .uppercase {
   text-transform: uppercase;
 }
@@ -1665,6 +1674,10 @@ video {
 }
 .italic {
   font-style: italic;
+}
+.tabular-nums {
+  --tw-numeric-spacing: tabular-nums;
+  font-variant-numeric: var(--tw-ordinal) var(--tw-slashed-zero) var(--tw-numeric-figure) var(--tw-numeric-spacing) var(--tw-numeric-fraction);
 }
 .leading-none {
   line-height: 1;
@@ -1704,6 +1717,10 @@ video {
 }
 .text-destructive-foreground {
   color: hsl(var(--destructive-foreground));
+}
+.text-emerald-600 {
+  --tw-text-opacity: 1;
+  color: rgb(5 150 105 / var(--tw-text-opacity, 1));
 }
 .text-foreground {
   color: hsl(var(--foreground));
@@ -1784,9 +1801,17 @@ video {
   --tw-text-opacity: 1;
   color: rgb(71 85 105 / var(--tw-text-opacity, 1));
 }
+.text-slate-700 {
+  --tw-text-opacity: 1;
+  color: rgb(51 65 85 / var(--tw-text-opacity, 1));
+}
 .text-white {
   --tw-text-opacity: 1;
   color: rgb(255 255 255 / var(--tw-text-opacity, 1));
+}
+.text-yellow-600 {
+  --tw-text-opacity: 1;
+  color: rgb(202 138 4 / var(--tw-text-opacity, 1));
 }
 .text-yellow-800 {
   --tw-text-opacity: 1;
@@ -1794,6 +1819,9 @@ video {
 }
 .underline-offset-4 {
   text-underline-offset: 4px;
+}
+.accent-blue-600 {
+  accent-color: #2563eb;
 }
 .opacity-0 {
   opacity: 0;
@@ -1861,6 +1889,11 @@ video {
 }
 .transition-transform {
   transition-property: transform;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+.transition-shadow {
+  transition-property: box-shadow;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   transition-duration: 150ms;
 }
@@ -2029,6 +2062,11 @@ input[type="number"] {
 }
 .hover\:opacity-100:hover {
   opacity: 1;
+}
+.hover\:shadow-sm:hover {
+  --tw-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --tw-shadow-colored: 0 1px 2px 0 var(--tw-shadow-color);
+  box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
 }
 .focus\:bg-accent:focus {
   background-color: hsl(var(--accent));
@@ -2314,6 +2352,10 @@ input[type="number"] {
     width: 9rem;
   }
 
+  .sm\:w-64 {
+    width: 16rem;
+  }
+
   .sm\:w-9 {
     width: 2.25rem;
   }
@@ -2324,6 +2366,10 @@ input[type="number"] {
 
   .sm\:w-full {
     width: 100%;
+  }
+
+  .sm\:w-44 {
+    width: 11rem;
   }
 
   .sm\:max-w-2xl {
@@ -2349,6 +2395,10 @@ input[type="number"] {
 
   .sm\:grid-cols-3 {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .sm\:grid-cols-\[minmax\(0\2c 220px\)_1fr\] {
+    grid-template-columns: minmax(0,220px) 1fr;
   }
 
   .sm\:flex-row {
@@ -2383,6 +2433,10 @@ input[type="number"] {
     --tw-space-x-reverse: 0;
     margin-right: calc(0.5rem * var(--tw-space-x-reverse));
     margin-left: calc(0.5rem * calc(1 - var(--tw-space-x-reverse)));
+  }
+
+  .sm\:self-auto {
+    align-self: auto;
   }
 
   .sm\:rounded-2xl {
@@ -2598,6 +2652,10 @@ input[type="number"] {
 }
 @media (min-width: 1024px) {
 
+  .lg\:col-span-3 {
+    grid-column: span 3 / span 3;
+  }
+
   .lg\:grid-cols-2 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2616,6 +2674,16 @@ input[type="number"] {
 
   .lg\:grid-cols-7 {
     grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1280px) {
+
+  .xl\:col-span-3 {
+    grid-column: span 3 / span 3;
+  }
+
+  .xl\:grid-cols-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 .\[\&\:has\(\[role\=checkbox\]\)\]\:pr-0:has([role=checkbox]) {

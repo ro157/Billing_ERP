@@ -111,9 +111,13 @@ export async function POST(req: NextRequest) {
       )
       if (item.productId) {
         await conn.execute('UPDATE products SET current_stock = current_stock + ? WHERE id = ?', [item.quantity, item.productId])
+        const [[stockRow]] = await conn.execute(
+          'SELECT current_stock FROM products WHERE id = ?',
+          [item.productId]
+        ) as any[][]
         await conn.execute(
-          'INSERT INTO stock_movements (id, product_id, type, quantity, reference_type, reference_id, notes) VALUES (?,?,?,?,?,?,?)',
-          [randomUUID(), item.productId, 'IN', item.quantity, 'PURCHASE', id, purchaseNo]
+          'INSERT INTO stock_movements (id, product_id, type, quantity, balance_after, reference_type, reference_id, note) VALUES (?,?,?,?,?,?,?,?)',
+          [randomUUID(), item.productId, 'IN', item.quantity, stockRow.current_stock, 'PURCHASE', id, purchaseNo]
         )
       }
     }
