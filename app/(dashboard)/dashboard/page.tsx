@@ -1,10 +1,8 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
+import dynamic from 'next/dynamic'
 import Link from 'next/link'
-import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
-} from 'recharts'
 import {
   TrendingUp, ShoppingCart, FileText, AlertTriangle
 } from 'lucide-react'
@@ -13,6 +11,18 @@ import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { formatCurrency } from '@/lib/utils'
+import { DashboardPageSkeleton } from '@/components/layout/page-loader'
+
+const SalesPurchasesChart = dynamic(
+  () =>
+    import('@/components/dashboard/sales-purchases-chart').then((m) => ({
+      default: m.SalesPurchasesChart,
+    })),
+  {
+    ssr: false,
+    loading: () => <div className="h-[280px] animate-pulse rounded-lg bg-muted" />,
+  }
+)
 
 interface ChartRow {
   period: string
@@ -172,11 +182,7 @@ export default function DashboardPage() {
   }, [year, month, fetchDashboard])
 
   if (loading || !stats) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
-      </div>
-    )
+    return <DashboardPageSkeleton />
   }
 
   const chartData = buildChartData(
@@ -321,40 +327,13 @@ export default function DashboardPage() {
             )}
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={280}>
-              <AreaChart data={chartData} onClick={handleChartClick} style={{ cursor: month === 'ALL' ? 'pointer' : 'default' }}>
-                <defs>
-                  <linearGradient id="sales" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="purchases" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#a855f7" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#a855f7" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis
-                  dataKey="label"
-                  tick={{ fontSize: 10 }}
-                  interval={stats.chartType === 'daily' ? 2 : 0}
-                  angle={stats.chartType === 'daily' ? -45 : -20}
-                  textAnchor="end"
-                  height={55}
-                />
-                <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} />
-                <Tooltip
-                  formatter={(v: number, name: string, item: { payload?: { salesCount?: number; purchasesCount?: number } }) => {
-                    const count = name === 'Sales' ? item.payload?.salesCount : item.payload?.purchasesCount
-                    return [`${formatCurrency(v)}${count != null ? ` (${count} txn)` : ''}`, name]
-                  }}
-                  labelFormatter={(label) => `${xLabel}: ${label}`}
-                />
-                <Legend />
-                <Area type="monotone" dataKey="sales" name="Sales" stroke="#3b82f6" fill="url(#sales)" />
-                <Area type="monotone" dataKey="purchases" name="Purchases" stroke="#a855f7" fill="url(#purchases)" />
-              </AreaChart>
-            </ResponsiveContainer>
+            <SalesPurchasesChart
+              data={chartData}
+              chartType={stats.chartType}
+              month={month}
+              xLabel={xLabel}
+              onChartClick={handleChartClick}
+            />
           </CardContent>
         </Card>
       </div>

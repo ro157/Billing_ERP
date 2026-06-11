@@ -61,7 +61,7 @@ export async function PUT(req: NextRequest) {
     if (contentType.includes('multipart/form-data')) {
       const formData = await req.formData()
       body = {}
-      for (const [key, value] of formData.entries()) {
+      for (const [key, value] of Array.from(formData.entries())) {
         if (key === 'logo' && value instanceof File && value.size > 0) {
           body.logo = await fileToDataUrl(value)
         } else if (typeof value === 'string') {

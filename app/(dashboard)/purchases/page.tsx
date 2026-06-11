@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import {
@@ -16,16 +17,15 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useToast } from '@/hooks/use-toast'
 import {
-  Plus,
-  Search,
   Eye,
   Edit,
   Trash2,
-  LayoutGrid,
-  Table2,
   ShoppingCart,
+  Calendar,
 } from 'lucide-react'
 import { formatCurrency, formatDate, cn } from '@/lib/utils'
+import { ListPageToolbar } from '@/components/shared/list-page-toolbar'
+import { parseJsonResponse } from '@/lib/fetch-json'
 
 interface Purchase {
   id: string
@@ -112,6 +112,8 @@ export default function PurchasesPage() {
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [fromDate, setFromDate] = useState('')
+  const [toDate, setToDate] = useState('')
   const [page, setPage] = useState(1)
   const [viewMode, setViewMode] = useState<'table' | 'card'>('table')
   const [isMobile, setIsMobile] = useState(false)
@@ -135,15 +137,24 @@ export default function PurchasesPage() {
     setLoading(true)
     try {
       const params = new URLSearchParams({ page: String(page), limit: '20' })
-      if (search) params.set('search', search)
+      if (search.trim()) params.set('search', search.trim())
+      if (fromDate) params.set('fromDate', fromDate)
+      if (toDate) params.set('toDate', toDate)
       const res = await fetch(`/api/purchases?${params}`)
-      const data = await res.json()
+      const data = await parseJsonResponse<{ purchases?: Purchase[]; total?: number; error?: string }>(res)
+      if (!res.ok) {
+        toast({ title: data.error || 'Failed to load purchases', variant: 'destructive' })
+        return
+      }
       setPurchases(data.purchases || [])
-      setTotal(data.total || 0)
+      setTotal(Number(data.total) || 0)
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Failed to load purchases'
+      toast({ title: message, variant: 'destructive' })
     } finally {
       setLoading(false)
     }
-  }, [search, page])
+  }, [search, fromDate, toDate, page, toast])
 
   useEffect(() => {
     fetchPurchases()
@@ -152,7 +163,7 @@ export default function PurchasesPage() {
   const fetchPurchaseDetail = async (id: string) => {
     const res = await fetch(`/api/purchases/${id}`)
     if (!res.ok) throw new Error('Failed to load purchase')
-    return (await res.json()) as PurchaseDetail
+    return await parseJsonResponse<PurchaseDetail>(res)
   }
 
   const openView = async (p: Purchase) => {
@@ -248,55 +259,71 @@ export default function PurchasesPage() {
 
   return (
     <div className="space-y-4 md:space-y-6 min-w-0">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold">Purchases</h1>
-          <p className="text-sm sm:text-base text-muted-foreground">{total} purchase(s)</p>
-        </div>
-        <Link href="/purchases/new" className="w-full sm:w-auto">
-          <Button className="h-9 w-full sm:w-auto">
-            <Plus className="w-4 h-4 shrink-0 mr-1.5" />
-            <span className="text-sm">New Purchase</span>
-          </Button>
-        </Link>
+      <div className="min-w-0">
+        <h1 className="text-xl sm:text-2xl font-bold">Purchases</h1>
+        <p className="text-sm sm:text-base text-muted-foreground">{total} purchase(s)</p>
       </div>
 
-      <Card className="overflow-hidden">
-        <div className="p-3 sm:p-4 border-b flex flex-col gap-2 sm:flex-row sm:items-center">
-          <div className="relative flex-1 min-w-0">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Search purchases..."
-              className="pl-9 h-9 bg-background"
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value)
-                setPage(1)
-              }}
-            />
-          </div>
-          <div className="hidden md:flex items-center gap-1 rounded-md border bg-background p-1 shrink-0 self-end sm:self-auto">
-            <Button
-              variant={viewMode === 'table' ? 'secondary' : 'outline'}
-              size="icon"
-              className="h-8 w-8"
-              title="Table view"
-              onClick={() => setViewMode('table')}
-            >
-              <Table2 className="h-4 w-4" />
-            </Button>
-            <Button
-              variant={viewMode === 'card' ? 'secondary' : 'outline'}
-              size="icon"
-              className="h-8 w-8"
-              title="Card view"
-              onClick={() => setViewMode('card')}
-            >
-              <LayoutGrid className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
+      <ListPageToolbar
+        searchPlaceholder="Vendor or purchase no..."
+        search={search}
+        onSearchChange={(v) => { setSearch(v); setPage(1) }}
+        addLabel="New Purchase"
+        addHref="/purchases/new"
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+      />
 
+      <Card>
+        <CardContent className="p-3 sm:p-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
+            <div className="space-y-1.5 min-w-0">
+              <Label className="text-xs text-muted-foreground">From Date</Label>
+              <div className="relative">
+                <Input
+                  type="date"
+                  className="h-9 w-full min-w-0 pr-9 text-sm [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:right-0 [&::-webkit-calendar-picker-indicator]:w-9 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:cursor-pointer"
+                  value={fromDate}
+                  onChange={(e) => { setFromDate(e.target.value); setPage(1) }}
+                />
+                <Calendar className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+              </div>
+            </div>
+
+            <div className="space-y-1.5 min-w-0">
+              <Label className="text-xs text-muted-foreground">To Date</Label>
+              <div className="relative">
+                <Input
+                  type="date"
+                  className="h-9 w-full min-w-0 pr-9 text-sm [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:right-0 [&::-webkit-calendar-picker-indicator]:w-9 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:cursor-pointer"
+                  min={fromDate || undefined}
+                  value={toDate}
+                  onChange={(e) => { setToDate(e.target.value); setPage(1) }}
+                />
+                <Calendar className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+              </div>
+            </div>
+
+            <div className="col-span-2 md:col-span-1 flex items-end min-w-0">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-9 w-full min-w-0 px-2 sm:px-4"
+                onClick={() => {
+                  setSearch('')
+                  setFromDate('')
+                  setToDate('')
+                  setPage(1)
+                }}
+              >
+                Clear
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="overflow-hidden">
         {loading ? (
           <CardContent className="py-12 text-center text-muted-foreground">Loading...</CardContent>
         ) : purchases.length === 0 ? (

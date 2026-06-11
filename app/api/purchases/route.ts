@@ -6,6 +6,7 @@ import { ensurePurchaseSchema } from '@/lib/ensure-purchase-schema'
 import { computePurchaseItemTotals } from '@/lib/purchase-totals'
 import { roundToTwo } from '@/lib/utils'
 import { randomUUID } from 'crypto'
+import { apiErrorResponse } from '@/lib/api-error'
 
 export async function GET(req: NextRequest) {
   const { error } = await requirePermission('purchases', 'view')
@@ -15,6 +16,8 @@ export async function GET(req: NextRequest) {
   const search = searchParams.get('search') || ''
   const status = searchParams.get('status')
   const vendorId = searchParams.get('vendorId')
+  const fromDate = searchParams.get('fromDate')
+  const toDate = searchParams.get('toDate')
   const page = parseInt(searchParams.get('page') || '1')
   const limit = parseInt(searchParams.get('limit') || '20')
   const offset = (page - 1) * limit
@@ -24,18 +27,24 @@ export async function GET(req: NextRequest) {
   if (search) { conditions.push('(p.purchase_no LIKE ? OR v.name LIKE ?)'); const s = `%${search}%`; params.push(s, s) }
   if (status) { conditions.push('p.status = ?'); params.push(status) }
   if (vendorId) { conditions.push('p.vendor_id = ?'); params.push(vendorId) }
+  if (fromDate) { conditions.push('p.date >= ?'); params.push(fromDate) }
+  if (toDate) { conditions.push('p.date <= ?'); params.push(toDate) }
 
   const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''
-  const [rows] = await db.execute(
-    `SELECT p.*, v.name as vendor_name FROM purchases p LEFT JOIN vendors v ON p.vendor_id = v.id
-     ${where} ORDER BY p.date DESC LIMIT ? OFFSET ?`,
-    [...params, limit, offset]
-  ) as any[]
-  const [countRows] = await db.execute(
-    `SELECT COUNT(*) as total FROM purchases p LEFT JOIN vendors v ON p.vendor_id = v.id ${where}`, params
-  ) as any[]
+  try {
+    const [rows] = await db.execute(
+      `SELECT p.*, v.name as vendor_name FROM purchases p LEFT JOIN vendors v ON p.vendor_id = v.id
+       ${where} ORDER BY p.date DESC LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
+    ) as any[]
+    const [countRows] = await db.execute(
+      `SELECT COUNT(*) as total FROM purchases p LEFT JOIN vendors v ON p.vendor_id = v.id ${where}`, params
+    ) as any[]
 
-  return NextResponse.json({ purchases: rows, total: countRows[0].total, page, limit })
+    return NextResponse.json({ purchases: rows, total: countRows[0].total, page, limit })
+  } catch (err) {
+    return apiErrorResponse(err, 'GET /api/purchases')
+  }
 }
 
 export async function POST(req: NextRequest) {

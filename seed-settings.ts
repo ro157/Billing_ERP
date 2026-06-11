@@ -101,5 +101,4 @@ async function seedBusinessSettings() {
   }
 }
 
-seedBusinessSettings()</content>
-<parameter name="filePath">c:\Users\VIROS\Desktop\Projects\virosgstbilling\seed-settings.ts
+seedBusinessSettings()

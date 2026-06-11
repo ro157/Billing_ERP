@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { ensureProductsDiscountColumn } from '@/lib/ensure-product-schema'
 import { productSchema } from '@/lib/validations'
 import { randomUUID } from 'crypto'
+import { apiErrorResponse } from '@/lib/api-error'
 
 export async function GET(req: NextRequest) {
   const { error } = await requirePermission('inventory', 'view')
@@ -30,18 +31,22 @@ export async function GET(req: NextRequest) {
   if (categoryId) { conditions.push('p.category_id = ?'); params.push(categoryId) }
   const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : ''
 
-  const query = `SELECT p.*, c.name as category_name, b.name as brand_name, u.name as unit_name, u.short_name as unit_short_name
-     FROM products p
-     LEFT JOIN categories c ON p.category_id = c.id
-     LEFT JOIN brands b ON p.brand_id = b.id
-     LEFT JOIN units u ON p.unit_id = u.id
-     ${where} ORDER BY p.name ASC LIMIT ? OFFSET ?`
-  const [rows] = await db.execute(query, [...params, limit, offset]) as any[]
+  try {
+    const query = `SELECT p.*, c.name as category_name, b.name as brand_name, u.name as unit_name, u.short_name as unit_short_name
+       FROM products p
+       LEFT JOIN categories c ON p.category_id = c.id
+       LEFT JOIN brands b ON p.brand_id = b.id
+       LEFT JOIN units u ON p.unit_id = u.id
+       ${where} ORDER BY p.name ASC LIMIT ? OFFSET ?`
+    const [rows] = await db.execute(query, [...params, limit, offset]) as any[]
 
-  const countQuery = `SELECT COUNT(*) as total FROM products p ${where}`
-  const [countRows] = await db.execute(countQuery, params) as any[]
+    const countQuery = `SELECT COUNT(*) as total FROM products p ${where}`
+    const [countRows] = await db.execute(countQuery, params) as any[]
 
-  return NextResponse.json({ products: rows, total: countRows[0].total, page, limit })
+    return NextResponse.json({ products: rows, total: countRows[0].total, page, limit })
+  } catch (err) {
+    return apiErrorResponse(err, 'GET /api/products')
+  }
 }
 
 export async function POST(req: NextRequest) {

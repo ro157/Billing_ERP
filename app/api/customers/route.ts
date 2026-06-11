@@ -3,6 +3,7 @@ import db from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { customerSchema } from '@/lib/validations'
 import { randomUUID } from 'crypto'
+import { apiErrorResponse } from '@/lib/api-error'
 
 function optionalToNull(value: string | undefined | null): string | null {
   if (value === undefined || value === null) return null
@@ -28,15 +29,19 @@ export async function GET(req: NextRequest) {
     params = [s, s, s, s, s, s]
   }
 
-  const [rows] = await db.execute(
-    `SELECT * FROM customers ${whereClause} ORDER BY name ASC LIMIT ? OFFSET ?`,
-    [...params, limit, offset]
-  ) as any[]
-  const [countRows] = await db.execute(
-    `SELECT COUNT(*) as total FROM customers ${whereClause}`, params
-  ) as any[]
+  try {
+    const [rows] = await db.execute(
+      `SELECT * FROM customers ${whereClause} ORDER BY name ASC LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
+    ) as any[]
+    const [countRows] = await db.execute(
+      `SELECT COUNT(*) as total FROM customers ${whereClause}`, params
+    ) as any[]
 
-  return NextResponse.json({ customers: rows, total: countRows[0].total, page, limit })
+    return NextResponse.json({ customers: rows, total: countRows[0].total, page, limit })
+  } catch (err) {
+    return apiErrorResponse(err, 'GET /api/customers')
+  }
 }
 
 export async function POST(req: NextRequest) {

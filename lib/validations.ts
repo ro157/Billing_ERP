@@ -1,4 +1,36 @@
 import { z } from 'zod'
+import { GSTIN_REGEX, MOBILE_REGEX } from '@/lib/field-validation'
+
+const trimString = (v: unknown) => (typeof v === 'string' ? v.trim() : v)
+const emptyToUndefined = (v: unknown) =>
+  v === '' || v === null || v === undefined ? undefined : v
+const trimUpper = (v: unknown) => (typeof v === 'string' ? v.trim().toUpperCase() : v)
+
+const requiredMobileField = z.preprocess(
+  trimString,
+  z.string().min(1, 'Phone required').regex(MOBILE_REGEX, 'Invalid mobile number')
+)
+
+const optionalMobileField = z.preprocess(
+  emptyToUndefined,
+  z.string().regex(MOBILE_REGEX, 'Invalid mobile number').optional()
+)
+
+const requiredGstinField = z.preprocess(
+  trimUpper,
+  z.string().min(1, 'GSTIN required').regex(GSTIN_REGEX, 'Invalid GSTIN')
+)
+
+const optionalGstinField = z.preprocess(
+  (v) => {
+    if (typeof v === 'string') {
+      const t = v.trim().toUpperCase()
+      return t === '' ? undefined : t
+    }
+    return v
+  },
+  z.string().regex(GSTIN_REGEX, 'Invalid GSTIN').optional()
+)
 
 export const loginSchema = z.object({
   email: z.string().min(1, 'Username is required'),
@@ -30,10 +62,7 @@ export const changePasswordSchema = z.object({
 export const staffSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters').max(100),
   email: z.string().email('Invalid email address'),
-  mobile: z.preprocess(
-    (val) => (val === '' || val === null || val === undefined ? undefined : val),
-    z.string().regex(/^[6-9]\d{9}$/, 'Invalid mobile number').optional()
-  ),
+  mobile: optionalMobileField,
   role: z.enum(['ADMIN', 'STAFF']),
   branch: z.string().optional(),
   status: z.enum(['ACTIVE', 'INACTIVE']).default('ACTIVE'),
@@ -111,18 +140,9 @@ export const customerSchema = z.object({
     z.string().min(1, 'Contact person required').max(200)
   ),
   email: z.string().email().optional().or(z.literal('')),
-  mobile: z.string().optional(),
-  phone: z.preprocess(
-    (v) => (typeof v === 'string' ? v.trim() : v),
-    z.string().min(1, 'Phone required')
-  ),
-  gstin: z.preprocess(
-    (v) => (typeof v === 'string' ? v.trim().toUpperCase() : v),
-    z
-      .string()
-      .min(1, 'GSTIN required')
-      .regex(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/, 'Invalid GSTIN')
-  ),
+  mobile: optionalMobileField,
+  phone: requiredMobileField,
+  gstin: requiredGstinField,
   pan: z.preprocess(
     (v) => (typeof v === 'string' ? v.trim().toUpperCase() : v),
     z.string().regex(/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/, 'Invalid PAN').optional().or(z.literal(''))
@@ -151,18 +171,9 @@ export const vendorSchema = z.object({
     z.string().min(1, 'Contact person required').max(200)
   ),
   email: z.string().email().optional().or(z.literal('')),
-  mobile: z.string().optional(),
-  phone: z.preprocess(
-    (v) => (typeof v === 'string' ? v.trim() : v),
-    z.string().min(1, 'Phone required')
-  ),
-  gstin: z.preprocess(
-    (v) => (typeof v === 'string' ? v.trim().toUpperCase() : v),
-    z
-      .string()
-      .min(1, 'GSTIN required')
-      .regex(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/, 'Invalid GSTIN')
-  ),
+  mobile: optionalMobileField,
+  phone: requiredMobileField,
+  gstin: requiredGstinField,
   pan: z.preprocess(
     (v) => (typeof v === 'string' ? v.trim().toUpperCase() : v),
     z.string().regex(/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/, 'Invalid PAN').optional().or(z.literal(''))
@@ -184,8 +195,8 @@ const partySnapshotSchema = z.object({
   name: z.string().optional(),
   contactPerson: z.string().optional(),
   address: z.string().optional(),
-  mobile: z.string().optional(),
-  gstin: z.string().optional(),
+  mobile: optionalMobileField,
+  gstin: optionalGstinField,
   pan: z.string().optional(),
   city: z.string().optional(),
 })
@@ -305,13 +316,13 @@ export const returnableChallanSchema = challanSchema
 
 export const businessSettingsSchema = z.object({
   companyName: z.string().min(2, 'Company name required'),
-  gstin: z.string().optional(),
+  gstin: optionalGstinField,
   pan: z.string().optional(),
   address: z.string().optional(),
   city: z.string().optional(),
   state: z.string().optional(),
   pincode: z.string().optional(),
-  phone: z.string().optional(),
+  phone: optionalMobileField,
   email: z.string().email().optional().or(z.literal('')),
   website: z.string().url().optional().or(z.literal('')),
   logo: z.string().optional(),

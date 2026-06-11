@@ -8,8 +8,10 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useToast } from '@/hooks/use-toast'
 import { Label } from '@/components/ui/label'
-import { Plus, Eye, Edit, Trash2, LayoutGrid, Table2, FileText, Calendar, Search } from 'lucide-react'
+import { Eye, Edit, Trash2, FileText, Calendar } from 'lucide-react'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { ListPageToolbar } from '@/components/shared/list-page-toolbar'
+import { parseJsonResponse } from '@/lib/fetch-json'
 
 interface Invoice {
   id: string
@@ -87,9 +89,16 @@ export default function BillingPage() {
       if (fromDate) params.set('fromDate', fromDate)
       if (toDate) params.set('toDate', toDate)
       const res = await fetch(`/api/invoices?${params}`)
-      const data = await res.json()
+      const data = await parseJsonResponse<{ invoices?: Invoice[]; total?: number; error?: string }>(res)
+      if (!res.ok) {
+        toast({ title: data.error || 'Failed to load invoices', variant: 'destructive' })
+        return
+      }
       setInvoices(data.invoices || [])
-      setTotal(data.total || 0)
+      setTotal(Number(data.total) || 0)
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Failed to load invoices'
+      toast({ title: message, variant: 'destructive' })
     } finally {
       setLoading(false)
     }
@@ -128,35 +137,24 @@ export default function BillingPage() {
 
   return (
     <div className="space-y-4 md:space-y-6 min-w-0">
-      <div className="grid grid-cols-2 gap-3 sm:flex sm:items-center sm:justify-between">
-        <div className="col-span-2 sm:col-span-1 min-w-0">
-          <h1 className="text-lg sm:text-2xl font-bold truncate">Sales Invoices</h1>
-          <p className="text-xs sm:text-base text-muted-foreground">{total} invoice(s)</p>
-        </div>
-        <Link href="/billing/new" className="col-span-2 sm:col-span-1 sm:ml-auto">
-          <Button className="h-9 w-full sm:w-auto">
-            <Plus className="w-4 h-4 shrink-0 mr-1.5" />
-            <span className="text-sm">New Invoice</span>
-          </Button>
-        </Link>
+      <div className="min-w-0">
+        <h1 className="text-lg sm:text-2xl font-bold truncate">Sales Invoices</h1>
+        <p className="text-xs sm:text-base text-muted-foreground">{total} invoice(s)</p>
       </div>
+
+      <ListPageToolbar
+        searchPlaceholder="Company or invoice no..."
+        search={search}
+        onSearchChange={(v) => { setSearch(v); setPage(1) }}
+        addLabel="New Invoice"
+        addHref="/billing/new"
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+      />
 
       <Card>
         <CardContent className="p-3 sm:p-4">
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
-            <div className="col-span-2 md:col-span-3 lg:col-span-2 space-y-1.5 min-w-0">
-              <Label className="text-xs text-muted-foreground">Search</Label>
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                <Input
-                  placeholder="Company or invoice no..."
-                  className="h-9 pl-9 min-w-0"
-                  value={search}
-                  onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-                />
-              </div>
-            </div>
-
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
             <div className="space-y-1.5 min-w-0">
               <Label className="text-xs text-muted-foreground">From Date</Label>
               <div className="relative">
@@ -184,7 +182,7 @@ export default function BillingPage() {
               </div>
             </div>
 
-            <div className="col-span-1 md:col-span-3 lg:col-span-1 flex items-end gap-2 min-w-0">
+            <div className="col-span-2 md:col-span-1 flex items-end min-w-0">
               <Button
                 type="button"
                 variant="outline"
@@ -198,26 +196,6 @@ export default function BillingPage() {
               >
                 Clear
               </Button>
-              <div className="hidden md:flex items-center gap-1 rounded-md border bg-background p-1 shrink-0">
-                <Button
-                  variant={viewMode === 'table' ? 'secondary' : 'outline'}
-                  size="icon"
-                  className="h-8 w-8"
-                  title="Table view"
-                  onClick={() => setViewMode('table')}
-                >
-                  <Table2 className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant={viewMode === 'card' ? 'secondary' : 'outline'}
-                  size="icon"
-                  className="h-8 w-8"
-                  title="Card view"
-                  onClick={() => setViewMode('card')}
-                >
-                  <LayoutGrid className="h-4 w-4" />
-                </Button>
-              </div>
             </div>
           </div>
         </CardContent>

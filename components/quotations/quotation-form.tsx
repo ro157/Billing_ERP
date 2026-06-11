@@ -17,6 +17,12 @@ import { computeRoundOff, formatCurrency, GST_RATES, roundToNearestRupee, roundT
 import { Plus, Trash2, ArrowLeft, Package, Loader2 } from 'lucide-react'
 import Link from 'next/link'
 import { parseQuotationPartyDetails } from '@/lib/quotation-party'
+import { ContactFieldInputs } from '@/components/shared/contact-field-inputs'
+import {
+  firstPartyValidationError,
+  type PartyFieldErrors,
+  validatePartyContactFields,
+} from '@/lib/field-validation'
 
 interface Product {
   id: string
@@ -144,6 +150,7 @@ interface PartySectionProps {
   onSelectCustomer?: (c: Customer) => void
   customerSearchRef?: React.RefObject<HTMLDivElement>
   customerError?: string
+  contactErrors?: PartyFieldErrors
 }
 
 function PartySection({
@@ -160,6 +167,7 @@ function PartySection({
   onSelectCustomer,
   customerSearchRef,
   customerError,
+  contactErrors,
 }: PartySectionProps) {
   const inputClass = 'h-9'
 
@@ -221,23 +229,16 @@ function PartySection({
             className={inputClass}
           />
         </div>
-        <div className="space-y-2">
-          <Label>{mobileLabel}</Label>
-          <Input
-            type="tel"
-            value={fields.mobile}
-            onChange={(e) => onChange('mobile', e.target.value)}
-            className={inputClass}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label>GSTIN</Label>
-          <Input
-            value={fields.gstin}
-            onChange={(e) => onChange('gstin', e.target.value.toUpperCase())}
-            className={cn(inputClass, 'uppercase font-mono text-sm')}
-          />
-        </div>
+        <ContactFieldInputs
+          mobile={fields.mobile}
+          gstin={fields.gstin}
+          onMobileChange={(value) => onChange('mobile', value)}
+          onGstinChange={(value) => onChange('gstin', value)}
+          mobileLabel={mobileLabel}
+          mobileError={contactErrors?.mobile}
+          gstinError={contactErrors?.gstin}
+          inputClass={inputClass}
+        />
         <div className="space-y-2">
           <Label>PAN</Label>
           <Input
@@ -280,6 +281,8 @@ export function QuotationForm({ mode, quotationId }: QuotationFormProps) {
   const [products, setProducts] = useState<Product[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [buyerFields, setBuyerFields] = useState<PartyFields>(emptyParty)
+  const [buyerContactErrors, setBuyerContactErrors] = useState<PartyFieldErrors>({})
+  const [consigneeContactErrors, setConsigneeContactErrors] = useState<PartyFieldErrors>({})
   const [consigneeFields, setConsigneeFields] = useState<PartyFields>(emptyParty)
   const [sameAsBuyer, setSameAsBuyer] = useState(false)
   const [customerListOpen, setCustomerListOpen] = useState(false)
@@ -438,7 +441,7 @@ export function QuotationForm({ mode, quotationId }: QuotationFormProps) {
           gstRate: Number(item.gst_rate),
         }))
 
-        const metaRows: PendingItemMetaRow[] = formItems.map((item) => {
+        const metaRows: PendingItemMetaRow[] = formItems.map((item: QuotationInput['items'][number]) => {
           const p = productList.find((x) => x.id === item.productId)
           return {
             productName: p?.name ?? '',
@@ -494,10 +497,16 @@ export function QuotationForm({ mode, quotationId }: QuotationFormProps) {
 
   const updateBuyerField = <K extends keyof PartyFields>(key: K, value: PartyFields[K]) => {
     setBuyerFields((prev) => ({ ...prev, [key]: value }))
+    if (key === 'mobile' || key === 'gstin') {
+      setBuyerContactErrors((prev) => ({ ...prev, [key]: undefined }))
+    }
   }
 
   const updateConsigneeField = <K extends keyof PartyFields>(key: K, value: PartyFields[K]) => {
     setConsigneeFields((prev) => ({ ...prev, [key]: value }))
+    if (key === 'mobile' || key === 'gstin') {
+      setConsigneeContactErrors((prev) => ({ ...prev, [key]: undefined }))
+    }
   }
 
   const handleSameAsBuyerChange = (checked: boolean) => {
@@ -622,7 +631,16 @@ export function QuotationForm({ mode, quotationId }: QuotationFormProps) {
     const ids = data.items.map((i) => i.productId).filter(Boolean)
     if (new Set(ids).size !== ids.length) return 'Duplicate products are not allowed'
     if (ids.length !== data.items.length) return 'Please enter and select a product for every line item'
-    return null
+
+    const buyerErrors = validatePartyContactFields(buyerFields)
+    const consigneeErrors = validatePartyContactFields(consigneeFields)
+    setBuyerContactErrors(buyerErrors)
+    setConsigneeContactErrors(consigneeErrors)
+
+    return firstPartyValidationError([
+      { fields: buyerFields, label: 'Buyer' },
+      { fields: consigneeFields, label: 'Consignee' },
+    ])
   }
 
   const onSubmit = async (data: QuotationInput) => {
@@ -745,6 +763,7 @@ export function QuotationForm({ mode, quotationId }: QuotationFormProps) {
               onSelectCustomer={applyCustomer}
               customerSearchRef={customerSearchRef}
               customerError={errors.customerId ? 'Please select a customer from the list' : undefined}
+              contactErrors={buyerContactErrors}
             />
 
             <div className="space-y-4">
@@ -766,6 +785,7 @@ export function QuotationForm({ mode, quotationId }: QuotationFormProps) {
                 onChange={updateConsigneeField}
                 contactLabel="S. Person"
                 mobileLabel="Mobile"
+                contactErrors={consigneeContactErrors}
               />
             </div>
           </CardContent>

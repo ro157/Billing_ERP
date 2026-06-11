@@ -25,6 +25,12 @@ import {
   cn,
 } from '@/lib/utils'
 import { parseQuotationPartyDetails } from '@/lib/quotation-party'
+import { ContactFieldInputs } from '@/components/shared/contact-field-inputs'
+import {
+  firstPartyValidationError,
+  type PartyFieldErrors,
+  validatePartyContactFields,
+} from '@/lib/field-validation'
 
 interface Product {
   id: string
@@ -151,6 +157,7 @@ interface PartySectionProps {
   onSelectCustomer?: (c: Customer) => void
   customerSearchRef?: React.RefObject<HTMLDivElement>
   customerError?: string
+  contactErrors?: PartyFieldErrors
 }
 
 function PartySection({
@@ -168,6 +175,7 @@ function PartySection({
   onSelectCustomer,
   customerSearchRef,
   customerError,
+  contactErrors,
 }: PartySectionProps) {
   const inputClass = cn('h-9', disabled && 'bg-muted/60 cursor-not-allowed')
 
@@ -231,25 +239,17 @@ function PartySection({
             disabled={disabled}
           />
         </div>
-        <div className="space-y-2">
-          <Label>{mobileLabel}</Label>
-          <Input
-            type="tel"
-            value={fields.mobile}
-            onChange={(e) => onChange('mobile', e.target.value)}
-            className={inputClass}
-            disabled={disabled}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label>GSTIN</Label>
-          <Input
-            value={fields.gstin}
-            onChange={(e) => onChange('gstin', e.target.value.toUpperCase())}
-            className={cn(inputClass, 'uppercase font-mono text-sm')}
-            disabled={disabled}
-          />
-        </div>
+        <ContactFieldInputs
+          mobile={fields.mobile}
+          gstin={fields.gstin}
+          onMobileChange={(value) => onChange('mobile', value)}
+          onGstinChange={(value) => onChange('gstin', value)}
+          mobileLabel={mobileLabel}
+          mobileError={contactErrors?.mobile}
+          gstinError={contactErrors?.gstin}
+          disabled={disabled}
+          inputClass={inputClass}
+        />
         <div className="space-y-2">
           <Label>PAN</Label>
           <Input
@@ -301,6 +301,8 @@ export function InvoiceForm({ invoiceId }: { invoiceId?: string }) {
   const [saving, setSaving] = useState(false)
   const [buyerFields, setBuyerFields] = useState<PartyFields>(emptyParty)
   const [consigneeFields, setConsigneeFields] = useState<PartyFields>(emptyParty)
+  const [buyerContactErrors, setBuyerContactErrors] = useState<PartyFieldErrors>({})
+  const [consigneeContactErrors, setConsigneeContactErrors] = useState<PartyFieldErrors>({})
   const [sameAsBuyer, setSameAsBuyer] = useState(false)
   const [customerListOpen, setCustomerListOpen] = useState(false)
   const [lastCustomer, setLastCustomer] = useState<Customer | null>(null)
@@ -420,7 +422,7 @@ export function InvoiceForm({ invoiceId }: { invoiceId?: string }) {
             }))
           : [{ productId: '', quantity: 1, rate: 0, discount: 0, gstRate: 18 }]
 
-        const metaRows: PendingItemMetaRow[] = formItems.map((item) => {
+        const metaRows: PendingItemMetaRow[] = formItems.map((item: InvoiceInput['items'][number]) => {
           const p = productList.find((x) => x.id === item.productId)
           return {
             productName: p?.name ?? '',
@@ -555,10 +557,16 @@ export function InvoiceForm({ invoiceId }: { invoiceId?: string }) {
   const updateBuyerField = <K extends keyof PartyFields>(key: K, value: PartyFields[K]) => {
     // Do NOT keep syncing consignee on every buyer edit; user wants consignee editable.
     setBuyerFields((prev) => ({ ...prev, [key]: value }))
+    if (key === 'mobile' || key === 'gstin') {
+      setBuyerContactErrors((prev) => ({ ...prev, [key]: undefined }))
+    }
   }
 
   const updateConsigneeField = <K extends keyof PartyFields>(key: K, value: PartyFields[K]) => {
     setConsigneeFields((prev) => ({ ...prev, [key]: value }))
+    if (key === 'mobile' || key === 'gstin') {
+      setConsigneeContactErrors((prev) => ({ ...prev, [key]: undefined }))
+    }
   }
 
   const handleBuyerNameChange = (value: string) => {
@@ -689,7 +697,16 @@ export function InvoiceForm({ invoiceId }: { invoiceId?: string }) {
     if (new Set(ids).size !== ids.length) return 'Duplicate products are not allowed'
     if (ids.length !== data.items.length) return 'Please select a product for every line item'
     if (!data.customerId) return 'Please select a customer from the list'
-    return null
+
+    const buyerErrors = validatePartyContactFields(buyerFields)
+    const consigneeErrors = validatePartyContactFields(consigneeFields)
+    setBuyerContactErrors(buyerErrors)
+    setConsigneeContactErrors(consigneeErrors)
+
+    return firstPartyValidationError([
+      { fields: buyerFields, label: 'Buyer' },
+      { fields: consigneeFields, label: 'Consignee' },
+    ])
   }
 
   const onSubmit = async (data: InvoiceInput) => {
@@ -817,6 +834,7 @@ export function InvoiceForm({ invoiceId }: { invoiceId?: string }) {
               onSelectCustomer={applyCustomer}
               customerSearchRef={customerSearchRef}
               customerError={form.formState.errors.customerId?.message}
+              contactErrors={buyerContactErrors}
             />
 
             <div className="space-y-4">
@@ -838,6 +856,7 @@ export function InvoiceForm({ invoiceId }: { invoiceId?: string }) {
                 onChange={updateConsigneeField}
                 contactLabel="S. Person"
                 mobileLabel="Mobile"
+                contactErrors={consigneeContactErrors}
               />
             </div>
           </CardContent>

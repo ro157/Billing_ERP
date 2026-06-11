@@ -1,10 +1,11 @@
-'use client'
+import dynamic from 'next/dynamic'
+import { FormPageLoader } from '@/components/layout/page-loader'
 
-import { useParams } from 'next/navigation'
-import { InvoiceForm } from '@/components/billing/invoice-form'
+const InvoiceForm = dynamic(
+  () => import('@/components/billing/invoice-form').then((m) => ({ default: m.InvoiceForm })),
+  { loading: () => <FormPageLoader title="invoice form" /> }
+)
 
-export default function EditInvoicePage() {
-  const params = useParams()
-  const id = params.id as string
-  return <InvoiceForm invoiceId={id} />
+export default function EditInvoicePage({ params }: { params: { id: string } }) {
+  return <InvoiceForm invoiceId={params.id} />
 }

@@ -3,12 +3,14 @@
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useToast } from '@/hooks/use-toast'
-import { Plus, Search, Eye, Edit, Trash2, LayoutGrid, Table2, FileText } from 'lucide-react'
+import { Eye, Edit, Trash2, FileText } from 'lucide-react'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { ListPageToolbar } from '@/components/shared/list-page-toolbar'
+import { parseJsonResponse } from '@/lib/fetch-json'
+import { DocumentPdfViewer } from '@/components/shared/document-pdf-viewer'
 
 interface Quotation {
   id: string
@@ -21,10 +23,12 @@ interface Quotation {
 
 function QuotationActions({
   id,
+  onView,
   onDelete,
   compact = false,
 }: {
   id: string
+  onView: () => void
   onDelete: () => void
   compact?: boolean
 }) {
@@ -32,11 +36,15 @@ function QuotationActions({
   const icon = compact ? 'h-3.5 w-3.5' : 'h-4 w-4'
   return (
     <div className="flex items-center justify-end gap-0 shrink-0">
-      <Link href={`/quotations/${id}`}>
-        <Button variant="ghost" size="icon" title="View" className={size}>
-          <Eye className={icon} />
-        </Button>
-      </Link>
+      <Button
+        variant="ghost"
+        size="icon"
+        title="View PDF"
+        className={size}
+        onClick={onView}
+      >
+        <Eye className={icon} />
+      </Button>
       <Link href={`/quotations/${id}/edit`}>
         <Button variant="ghost" size="icon" title="Edit" className={size}>
           <Edit className={icon} />
@@ -64,6 +72,10 @@ export default function QuotationsPage() {
   const [page, setPage] = useState(1)
   const [viewMode, setViewMode] = useState<'table' | 'card'>('table')
   const [isMobile, setIsMobile] = useState(false)
+  const [pdfViewerOpen, setPdfViewerOpen] = useState(false)
+  const [pdfViewerUrl, setPdfViewerUrl] = useState<string | null>(null)
+  const [pdfViewerTitle, setPdfViewerTitle] = useState('')
+  const [pdfViewerFilename, setPdfViewerFilename] = useState('quotation.pdf')
 
   const showTable = viewMode === 'table' && !isMobile
   const showCards = viewMode === 'card' || isMobile
@@ -82,19 +94,30 @@ export default function QuotationsPage() {
       const params = new URLSearchParams({ page: String(page), limit: '20' })
       if (search) params.set('search', search)
       const res = await fetch(`/api/quotations?${params}`)
-      const data = await res.json()
+      const data = await parseJsonResponse<{ quotations?: Quotation[]; total?: number; error?: string }>(res)
       if (!res.ok) {
         toast({ title: data.error || 'Failed to load quotations', variant: 'destructive' })
         return
       }
       setQuotations(data.quotations || [])
       setTotal(Number(data.total) || 0)
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Failed to load quotations'
+      toast({ title: message, variant: 'destructive' })
     } finally {
       setLoading(false)
     }
   }, [search, page, toast])
 
   useEffect(() => { fetchQuotations() }, [fetchQuotations])
+
+  const handleView = (q: Quotation) => {
+    const safeName = q.quotation_no.replace(/[/\\?%*:|"<>]/g, '-')
+    setPdfViewerTitle(q.quotation_no)
+    setPdfViewerFilename(`${safeName}.pdf`)
+    setPdfViewerUrl(`/api/quotations/${q.id}/pdf`)
+    setPdfViewerOpen(true)
+  }
 
   const handleDelete = async (id: string, quotationNo: string) => {
     if (!confirm(`Delete quotation "${quotationNo}"?`)) return
@@ -127,50 +150,20 @@ export default function QuotationsPage() {
 
   return (
     <div className="space-y-4 md:space-y-6 min-w-0">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold">Quotations</h1>
-          <p className="text-sm sm:text-base text-muted-foreground">{total} quotation(s)</p>
-        </div>
-        <Link href="/quotations/new" className="w-full sm:w-auto">
-          <Button className="h-9 w-full sm:w-auto">
-            <Plus className="w-4 h-4 shrink-0 mr-1.5" />
-            <span className="text-sm">New Quotation</span>
-          </Button>
-        </Link>
+      <div className="min-w-0">
+        <h1 className="text-xl sm:text-2xl font-bold">Quotations</h1>
+        <p className="text-sm sm:text-base text-muted-foreground">{total} quotation(s)</p>
       </div>
 
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <div className="relative flex-1 min-w-0">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Search quotations..."
-            className="pl-9 h-9 bg-background"
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-          />
-        </div>
-        <div className="hidden md:flex items-center gap-1 rounded-md border bg-background p-1 shrink-0">
-          <Button
-            variant={viewMode === 'table' ? 'secondary' : 'outline'}
-            size="icon"
-            className="h-8 w-8"
-            title="Table view"
-            onClick={() => setViewMode('table')}
-          >
-            <Table2 className="h-4 w-4" />
-          </Button>
-          <Button
-            variant={viewMode === 'card' ? 'secondary' : 'outline'}
-            size="icon"
-            className="h-8 w-8"
-            title="Card view"
-            onClick={() => setViewMode('card')}
-          >
-            <LayoutGrid className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
+      <ListPageToolbar
+        searchPlaceholder="Search quotations..."
+        search={search}
+        onSearchChange={(v) => { setSearch(v); setPage(1) }}
+        addLabel="New Quotation"
+        addHref="/quotations/new"
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+      />
 
       {showTable && (
         <Card className="overflow-x-auto">
@@ -207,7 +200,11 @@ export default function QuotationsPage() {
                     <TableCell>{q.valid_until ? formatDate(q.valid_until) : '-'}</TableCell>
                     <TableCell className="text-right font-medium">{formatCurrency(q.total_amount)}</TableCell>
                     <TableCell className="text-right">
-                      <QuotationActions id={q.id} onDelete={() => handleDelete(q.id, q.quotation_no)} />
+                      <QuotationActions
+                        id={q.id}
+                        onView={() => handleView(q)}
+                        onDelete={() => handleDelete(q.id, q.quotation_no)}
+                      />
                     </TableCell>
                   </TableRow>
                 ))
@@ -247,6 +244,7 @@ export default function QuotationsPage() {
                         <QuotationActions
                           compact
                           id={q.id}
+                          onView={() => handleView(q)}
                           onDelete={() => handleDelete(q.id, q.quotation_no)}
                         />
                       </div>
@@ -290,6 +288,14 @@ export default function QuotationsPage() {
           )}
         </div>
       )}
+
+      <DocumentPdfViewer
+        open={pdfViewerOpen}
+        onOpenChange={setPdfViewerOpen}
+        pdfApiUrl={pdfViewerUrl}
+        title={pdfViewerTitle}
+        filename={pdfViewerFilename}
+      />
     </div>
   )
 }

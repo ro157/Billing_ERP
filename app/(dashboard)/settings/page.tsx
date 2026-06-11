@@ -15,6 +15,7 @@ import { Save } from 'lucide-react'
 import { businessSettingsSchema, type BusinessSettingsInput } from '@/lib/validations'
 import { INDIAN_STATES } from '@/lib/utils'
 import { DocumentHeaderPreview } from '@/components/settings/document-header-preview'
+import { sanitizeGstinInput, sanitizeMobileInput } from '@/lib/field-validation'
 
 
 export default function SettingsPage() {
@@ -156,7 +157,17 @@ export default function SettingsPage() {
               </div>
               <div className="space-y-2">
                 <Label>GSTIN</Label>
-                <Input {...register('gstin')} placeholder="22AAAAA0000A1Z5" />
+                <Input
+                  className="uppercase font-mono text-sm"
+                  maxLength={15}
+                  placeholder="22AAAAA0000A1Z5"
+                  {...register('gstin', {
+                    setValueAs: (v) => sanitizeGstinInput(String(v ?? '')),
+                  })}
+                />
+                {errors.gstin && (
+                  <p className="text-destructive text-xs">{errors.gstin.message}</p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label>PAN</Label>
@@ -164,7 +175,18 @@ export default function SettingsPage() {
               </div>
               <div className="space-y-2">
                 <Label>Phone</Label>
-                <Input {...register('phone')} placeholder="+91 98765 43210" />
+                <Input
+                  type="tel"
+                  inputMode="numeric"
+                  maxLength={10}
+                  placeholder="9876543210"
+                  {...register('phone', {
+                    setValueAs: (v) => sanitizeMobileInput(String(v ?? '')),
+                  })}
+                />
+                {errors.phone && (
+                  <p className="text-destructive text-xs">{errors.phone.message}</p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label>Email</Label>

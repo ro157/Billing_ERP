@@ -1,10 +1,11 @@
-'use client'
+import dynamic from 'next/dynamic'
+import { FormPageLoader } from '@/components/layout/page-loader'
 
-import { useParams } from 'next/navigation'
-import { QuotationForm } from '@/components/quotations/quotation-form'
+const QuotationForm = dynamic(
+  () => import('@/components/quotations/quotation-form').then((m) => ({ default: m.QuotationForm })),
+  { loading: () => <FormPageLoader title="quotation form" /> }
+)
 
-export default function EditQuotationPage() {
-  const params = useParams()
-  const id = params.id as string
-  return <QuotationForm mode="edit" quotationId={id} />
+export default function EditQuotationPage({ params }: { params: { id: string } }) {
+  return <QuotationForm mode="edit" quotationId={params.id} />
 }

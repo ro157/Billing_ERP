@@ -5,6 +5,7 @@ import { invoiceSchema } from '@/lib/validations'
 import { ensureInvoiceSchema } from '@/lib/ensure-invoice-schema'
 import { calculateGST, roundToNearestRupee, roundToTwo } from '@/lib/utils'
 import { randomUUID } from 'crypto'
+import { apiErrorResponse } from '@/lib/api-error'
 
 function computeItemTotals(item: any, gstType: string) {
   // UI uses flat ₹ discount applied after GST on the line total
@@ -43,16 +44,20 @@ export async function GET(req: NextRequest) {
   if (toDate) { conditions.push('i.date <= ?'); params.push(toDate) }
 
   const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''
-  const [rows] = await db.execute(
-    `SELECT i.*, c.name as customer_name FROM invoices i LEFT JOIN customers c ON i.customer_id = c.id
-     ${where} ORDER BY i.date DESC, i.created_at DESC LIMIT ? OFFSET ?`,
-    [...params, limit, offset]
-  ) as any[]
-  const [countRows] = await db.execute(
-    `SELECT COUNT(*) as total FROM invoices i LEFT JOIN customers c ON i.customer_id = c.id ${where}`, params
-  ) as any[]
+  try {
+    const [rows] = await db.execute(
+      `SELECT i.*, c.name as customer_name FROM invoices i LEFT JOIN customers c ON i.customer_id = c.id
+       ${where} ORDER BY i.date DESC, i.created_at DESC LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
+    ) as any[]
+    const [countRows] = await db.execute(
+      `SELECT COUNT(*) as total FROM invoices i LEFT JOIN customers c ON i.customer_id = c.id ${where}`, params
+    ) as any[]
 
-  return NextResponse.json({ invoices: rows, total: countRows[0].total, page, limit })
+    return NextResponse.json({ invoices: rows, total: countRows[0].total, page, limit })
+  } catch (err) {
+    return apiErrorResponse(err, 'GET /api/invoices')
+  }
 }
 
 export async function POST(req: NextRequest) {

@@ -77,6 +77,10 @@ export function Sidebar({ open }: SidebarProps) {
   const visibleItems = useMemo(() => navItems.filter(isVisible), [isAdmin, permissions])
   const showLabels = open || mobileSidebarOpen
 
+  useEffect(() => {
+    visibleItems.forEach((item) => router.prefetch(item.href))
+  }, [visibleItems, router])
+
   return (
     <aside
       className={cn(

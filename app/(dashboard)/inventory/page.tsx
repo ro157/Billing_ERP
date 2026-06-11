@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast'
 import { Plus, Search, Edit, Trash2, Package, Tag, X, Eye, LayoutGrid, Table2 } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
+import { parseJsonResponse } from '@/lib/fetch-json'
 
 function formatHsnSac(hsn: string | null, sac: string | null): string {
   if (hsn && sac) return `${hsn} / ${sac}`
@@ -92,9 +93,16 @@ export default function InventoryPage() {
       if (categoryFilter) params.set('categoryId', categoryFilter)
       params.set('status', statusFilter)
       const res = await fetch(`/api/products?${params}`)
-      const data = await res.json()
-      setProducts(data.products)
-      setTotal(data.total)
+      const data = await parseJsonResponse<{ products?: Product[]; total?: number; error?: string }>(res)
+      if (!res.ok) {
+        toast({ title: data.error || 'Failed to load products', variant: 'destructive' })
+        return
+      }
+      setProducts(data.products || [])
+      setTotal(Number(data.total) || 0)
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Failed to load products'
+      toast({ title: message, variant: 'destructive' })
     } finally {
       setLoading(false)
     }
@@ -396,7 +404,7 @@ export default function InventoryPage() {
 
       {showTable && (
         <Card className="overflow-x-auto">
-          <Table>
+          <Table className="min-w-[800px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-10">
@@ -414,6 +422,7 @@ export default function InventoryPage() {
               <TableHead>Product</TableHead>
               <TableHead>HSN / SAC</TableHead>
               <TableHead className="text-right">Sale Price</TableHead>
+              <TableHead className="text-right">Stock</TableHead>
               <TableHead>Category</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
@@ -421,9 +430,9 @@ export default function InventoryPage() {
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={7} className="text-center py-12 text-muted-foreground">Loading...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center py-12 text-muted-foreground">Loading...</TableCell></TableRow>
             ) : products.length === 0 ? (
-              <TableRow><TableCell colSpan={7} className="text-center py-12 text-muted-foreground">No products found</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center py-12 text-muted-foreground">No products found</TableCell></TableRow>
             ) : (
               products.map((p) => (
                 <TableRow key={p.id}>
@@ -449,6 +458,20 @@ export default function InventoryPage() {
                   </TableCell>
                   <TableCell>{formatHsnSac(p.hsn_code, p.sac_code)}</TableCell>
                   <TableCell className="text-right">{formatCurrency(Number(p.selling_price))}</TableCell>
+                  <TableCell className="text-right">
+                    <span
+                      className={
+                        Number(p.current_stock) <= Number(p.low_stock_alert ?? 0)
+                          ? 'font-medium text-orange-600'
+                          : ''
+                      }
+                    >
+                      {Number(p.current_stock)}
+                      {p.unit_short_name && (
+                        <span className="text-xs text-muted-foreground ml-1">{p.unit_short_name}</span>
+                      )}
+                    </span>
+                  </TableCell>
                   <TableCell>{p.category_name || '-'}</TableCell>
                   <TableCell>
                     <Badge variant={p.is_active === 1 ? 'default' : 'secondary'}>
@@ -573,9 +596,24 @@ export default function InventoryPage() {
                         </div>
                       </div>
 
-                      <div className="mt-2 flex justify-between gap-2 border-t pt-2 text-sm">
-                        <span className="text-xs text-muted-foreground">Sale Price</span>
-                        <span className="font-medium text-sm">{formatCurrency(Number(p.selling_price))}</span>
+                      <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 border-t pt-2 text-sm">
+                        <div className="flex flex-col">
+                          <span className="text-xs text-muted-foreground">Sale Price</span>
+                          <span className="font-medium text-sm">{formatCurrency(Number(p.selling_price))}</span>
+                        </div>
+                        <div className="flex flex-col items-end">
+                          <span className="text-xs text-muted-foreground">Stock</span>
+                          <span
+                            className={`font-medium text-sm ${
+                              Number(p.current_stock) <= Number(p.low_stock_alert ?? 0)
+                                ? 'text-orange-600'
+                                : ''
+                            }`}
+                          >
+                            {Number(p.current_stock)}
+                            {p.unit_short_name ? ` ${p.unit_short_name}` : ''}
+                          </span>
+                        </div>
                       </div>
                     </div>
 

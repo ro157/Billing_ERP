@@ -16,6 +16,12 @@ import { calculateGST, formatCurrency, GST_RATES, roundToTwo, cn } from '@/lib/u
 import { computePurchaseLineTotals } from '@/lib/purchase-totals'
 import { Plus, Trash2, ArrowLeft, Package } from 'lucide-react'
 import Link from 'next/link'
+import { ContactFieldInputs } from '@/components/shared/contact-field-inputs'
+import {
+  firstPartyValidationError,
+  type PartyFieldErrors,
+  validatePartyContactFields,
+} from '@/lib/field-validation'
 
 interface Product {
   id: string
@@ -159,6 +165,7 @@ export function PurchaseForm({ purchaseId }: { purchaseId?: string }) {
   const [products, setProducts] = useState<Product[]>([])
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [vendorFields, setVendorFields] = useState<VendorFields>(emptyVendorFields)
+  const [vendorContactErrors, setVendorContactErrors] = useState<PartyFieldErrors>({})
   const [vendorListOpen, setVendorListOpen] = useState(false)
   const vendorSearchRef = useRef<HTMLDivElement>(null)
   const productSearchRefs = useRef<Record<string, HTMLDivElement | null>>({})
@@ -385,6 +392,9 @@ export function PurchaseForm({ purchaseId }: { purchaseId?: string }) {
 
   const updateVendorField = <K extends keyof VendorFields>(key: K, value: VendorFields[K]) => {
     setVendorFields((prev) => ({ ...prev, [key]: value }))
+    if (key === 'mobile' || key === 'gstin') {
+      setVendorContactErrors((prev) => ({ ...prev, [key]: undefined }))
+    }
   }
 
   const getUsedProductIds = (excludeIndex: number) => {
@@ -568,7 +578,11 @@ export function PurchaseForm({ purchaseId }: { purchaseId?: string }) {
     if (new Set(ids).size !== ids.length) return 'Duplicate products are not allowed'
     if (ids.length !== data.items.length) return 'Please select a product for every line item'
     if (!data.vendorId) return 'Please select a vendor from the list'
-    return null
+
+    const vendorErrors = validatePartyContactFields(vendorFields)
+    setVendorContactErrors(vendorErrors)
+
+    return firstPartyValidationError([{ fields: vendorFields, label: 'Vendor' }])
   }
 
   const onSubmit = async (data: PurchaseInput) => {
@@ -720,22 +734,14 @@ export function PurchaseForm({ purchaseId }: { purchaseId?: string }) {
                   onChange={(e) => updateVendorField('contactPerson', e.target.value)}
                 />
               </div>
-              <div className="space-y-2">
-                <Label>Mobile</Label>
-                <Input
-                  className="h-9"
-                  value={vendorFields.mobile}
-                  onChange={(e) => updateVendorField('mobile', e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>GSTIN</Label>
-                <Input
-                  className="h-9 uppercase font-mono text-sm"
-                  value={vendorFields.gstin}
-                  onChange={(e) => updateVendorField('gstin', e.target.value.toUpperCase())}
-                />
-              </div>
+              <ContactFieldInputs
+                mobile={vendorFields.mobile}
+                gstin={vendorFields.gstin}
+                onMobileChange={(value) => updateVendorField('mobile', value)}
+                onGstinChange={(value) => updateVendorField('gstin', value)}
+                mobileError={vendorContactErrors.mobile}
+                gstinError={vendorContactErrors.gstin}
+              />
               <div className="space-y-2">
                 <Label>GST Type</Label>
                 <Select

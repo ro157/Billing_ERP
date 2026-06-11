@@ -97,6 +97,77 @@ function formatHsnSac(hsn?: string | null, sac?: string | null): string {
   return hsn || sac || '-'
 }
 
+const ITEM_TABLE_FONT_SIZE = 6.5
+const ITEM_TABLE_LINE_HEIGHT = 3.2
+const ITEM_TABLE_CELL_PADDING = 1.5
+
+function getProductCellParts(item: QuotationPdfItem | null | undefined): { productName: string; description: string | null } {
+  if (!item) return { productName: '-', description: null }
+  const productName = item.product_name?.trim() || '-'
+  const description = item.description?.trim() || null
+  if (!description || description.toLowerCase() === productName.toLowerCase()) {
+    return { productName, description: null }
+  }
+  return { productName, description }
+}
+
+function estimateProductCellHeight(doc: jsPDF, item: QuotationPdfItem, maxWidth: number): number {
+  const { productName, description } = getProductCellParts(item)
+  const textWidth = Math.max(8, maxWidth - ITEM_TABLE_CELL_PADDING * 2)
+  doc.setFontSize(ITEM_TABLE_FONT_SIZE)
+
+  doc.setFont('helvetica', 'bold')
+  const nameLines = doc.splitTextToSize(productName, textWidth)
+
+  let lines = nameLines.length
+  if (description) {
+    doc.setFont('helvetica', 'normal')
+    lines += doc.splitTextToSize(description, textWidth).length
+  }
+
+  return ITEM_TABLE_CELL_PADDING * 2 + lines * ITEM_TABLE_LINE_HEIGHT
+}
+
+function drawProductCell(
+  doc: jsPDF,
+  item: QuotationPdfItem,
+  x: number,
+  y: number,
+  width: number
+): void {
+  const { productName, description } = getProductCellParts(item)
+  const textWidth = Math.max(8, width - ITEM_TABLE_CELL_PADDING * 2)
+  const textX = x + ITEM_TABLE_CELL_PADDING
+  let textY = y + ITEM_TABLE_CELL_PADDING + 2.2
+
+  doc.setFontSize(ITEM_TABLE_FONT_SIZE)
+  doc.setTextColor(...TEXT)
+  doc.setFont('helvetica', 'bold')
+  const nameLines = doc.splitTextToSize(productName, textWidth)
+  doc.text(nameLines, textX, textY)
+  textY += nameLines.length * ITEM_TABLE_LINE_HEIGHT
+
+  if (description) {
+    doc.setFont('helvetica', 'normal')
+    const descLines = doc.splitTextToSize(description, textWidth)
+    doc.text(descLines, textX, textY)
+  }
+}
+
+const TABLE_BORDER_WIDTH = 0.2
+const TABLE_VERTICAL_BORDER = {
+  top: 0,
+  right: TABLE_BORDER_WIDTH,
+  bottom: 0,
+  left: TABLE_BORDER_WIDTH,
+} as const
+const TABLE_FULL_BORDER = {
+  top: TABLE_BORDER_WIDTH,
+  right: TABLE_BORDER_WIDTH,
+  bottom: TABLE_BORDER_WIDTH,
+  left: TABLE_BORDER_WIDTH,
+} as const
+
 function stateWithCode(stateName?: string | null): string {
   if (!stateName) return '-'
   const found = INDIAN_STATES.find((s) => s.name.toLowerCase() === stateName.toLowerCase())
@@ -169,6 +240,189 @@ function drawLabeledBlock(doc: jsPDF, x: number, y: number, maxWidth: number, li
 function inferGstType(companyState?: string | null, customerState?: string | null): 'CGST_SGST' | 'IGST' {
   if (!companyState || !customerState) return 'CGST_SGST'
   return companyState.trim().toLowerCase() === customerState.trim().toLowerCase() ? 'CGST_SGST' : 'IGST'
+}
+
+const FOOTER_TOTAL_ROW_H = 7
+const FOOTER_WORDS_ROW_H = 11
+const FOOTER_BANK_ROW_H = 42
+const FOOTER_SIGNATORY_H = 20
+
+type FooterLayout = {
+  totalRowTop: number
+  wordsRowTop: number
+  bankRowTop: number
+  signatoryTop: number
+  termsTop: number
+  footerBottom: number
+  termsBlockH: number
+  termLines: string[]
+}
+
+function computeFooterLayout(doc: jsPDF, pageH: number, contentW: number, terms?: string | null): FooterLayout {
+  const bottom = pageH - MARGIN
+  const termsText = terms?.trim()
+  const termLines = termsText
+    ? doc.splitTextToSize(termsText.replace(/\r\n/g, '\n'), contentW - 8).slice(0, 12)
+    : []
+  const termsBlockH = termsText ? 7 + termLines.length * 3.2 + 3 : 0
+
+  const footerBottom = bottom
+  const termsTop = footerBottom - termsBlockH
+  const signatoryTop = termsTop - FOOTER_SIGNATORY_H
+  const bankRowTop = signatoryTop - FOOTER_BANK_ROW_H
+  const wordsRowTop = bankRowTop - FOOTER_WORDS_ROW_H
+  const totalRowTop = wordsRowTop - FOOTER_TOTAL_ROW_H
+
+  return { totalRowTop, wordsRowTop, bankRowTop, signatoryTop, termsTop, footerBottom, termsBlockH, termLines }
+}
+
+function estimateProductsBlockHeight(doc: jsPDF, items: QuotationPdfItem[], contentW: number): number {
+  const productColW = contentW * 0.28
+  let productsH = 0
+  for (const item of items) {
+    productsH += Math.max(7, estimateProductCellHeight(doc, item, productColW))
+  }
+  return 7 + productsH
+}
+
+function drawQuotationFooter(
+  doc: jsPDF,
+  bodyLeft: number,
+  bodyRight: number,
+  contentW: number,
+  pageW: number,
+  settings: QuotationPdfSettings,
+  quotation: QuotationPdfData,
+  isIgst: boolean,
+  totalTaxable: number,
+  taxAmt: number,
+  layout: FooterLayout
+): void {
+  const words = amountInWords(Number(quotation.total_amount))
+  const roundOff = Number(quotation.round_off) || 0
+  const pad = 2
+
+  doc.setDrawColor(...BORDER)
+  doc.setLineWidth(0.25)
+
+  // Total in words row
+  doc.rect(bodyLeft, layout.wordsRowTop, contentW, FOOTER_WORDS_ROW_H)
+  doc.setFontSize(7)
+  doc.setTextColor(...TEXT)
+  doc.setFont('helvetica', 'bold')
+  doc.text('Total in words', bodyLeft + pad, layout.wordsRowTop + 4)
+  doc.setFont('helvetica', 'normal')
+  const wordLines = doc.splitTextToSize(words, contentW - pad * 2)
+  doc.text(wordLines.slice(0, 2), bodyLeft + pad, layout.wordsRowTop + 7.5)
+
+  // Bank details | UPI | Tax summary
+  const bankColW = contentW * 0.48
+  const qrColW = contentW * 0.22
+  const sumColW = contentW - bankColW - qrColW
+  const bankX = bodyLeft
+  const qrX = bodyLeft + bankColW
+  const sumX = qrX + qrColW
+
+  doc.rect(bodyLeft, layout.bankRowTop, contentW, FOOTER_BANK_ROW_H)
+  doc.line(qrX, layout.bankRowTop, qrX, layout.bankRowTop + FOOTER_BANK_ROW_H)
+  doc.line(sumX, layout.bankRowTop, sumX, layout.bankRowTop + FOOTER_BANK_ROW_H)
+
+  let bankY = layout.bankRowTop + 4
+  doc.setFont('helvetica', 'bold')
+  doc.text('Bank Details', bankX + pad, bankY)
+  doc.setFont('helvetica', 'normal')
+  bankY += 4
+  const bankLines = [
+    ['Name', settings.bankName || '-'],
+    ['Branch', settings.bankBranch || '-'],
+    ['Acc. Number', settings.bankAccount || '-'],
+    ['IFSC', settings.bankIfsc || '-'],
+    ['MICR Code', settings.bankMicr || '-'],
+    ['UPI ID', settings.upiId || '-'],
+  ]
+  bankLines.forEach(([label, value]) => {
+    doc.setFont('helvetica', 'bold')
+    doc.text(`${label} :`, bankX + pad, bankY)
+    doc.setFont('helvetica', 'normal')
+    const labelW = doc.getTextWidth(`${label} :`) + 1
+    const wrapped = doc.splitTextToSize(value, bankColW - pad * 2 - labelW)
+    doc.text(wrapped[0] || '-', bankX + pad + labelW, bankY)
+    bankY += wrapped.length > 1 ? 3.2 * wrapped.length : 3.2
+  })
+
+  const qrSize = 18
+  const qrBoxX = qrX + (qrColW - qrSize) / 2
+  const qrBoxY = layout.bankRowTop + 6
+  doc.rect(qrBoxX, qrBoxY, qrSize, qrSize)
+  doc.setFontSize(5.5)
+  doc.text('Pay using UPI', qrX + qrColW / 2, qrBoxY + qrSize + 3.5, { align: 'center' })
+
+  let sumY = layout.bankRowTop + 4
+  const summaryRows: [string, string][] = [['Taxable Amount', formatMoney(totalTaxable)]]
+  if (isIgst) {
+    summaryRows.push(['Add : IGST', formatMoney(taxAmt)])
+  } else {
+    summaryRows.push(['Add : CGST', formatMoney(taxAmt / 2)])
+    summaryRows.push(['Add : SGST', formatMoney(taxAmt / 2)])
+  }
+  summaryRows.push(['Total Tax', formatMoney(taxAmt)])
+  summaryRows.push(['Round off Amount', formatMoney(roundOff)])
+
+  doc.setFontSize(7)
+  summaryRows.forEach(([label, val]) => {
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(...TEXT)
+    doc.text(label, sumX + pad, sumY)
+    doc.text(val, bodyRight - pad, sumY, { align: 'right' })
+    sumY += 3.8
+  })
+
+  const totalBarY = layout.bankRowTop + FOOTER_BANK_ROW_H - 10
+  doc.setFillColor(60, 60, 60)
+  doc.rect(sumX + 1, totalBarY, sumColW - 2, 7, 'F')
+  doc.setTextColor(255, 255, 255)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(7)
+  doc.text('Total Amount After Tax', sumX + pad, totalBarY + 4.8)
+  doc.text(`₹ ${formatMoney(quotation.total_amount)}`, bodyRight - pad, totalBarY + 4.8, { align: 'right' })
+  doc.setTextColor(...TEXT)
+  doc.setFontSize(5.5)
+  doc.setFont('helvetica', 'normal')
+  doc.text('(E & O.E.)', bodyRight - pad, layout.bankRowTop + FOOTER_BANK_ROW_H - 2.5, { align: 'right' })
+
+  // Signatory
+  doc.rect(bodyLeft, layout.signatoryTop, contentW, FOOTER_SIGNATORY_H)
+  doc.setFontSize(6.5)
+  doc.text(
+    'Certified that the particulars given above are true and correct.',
+    bodyRight - pad,
+    layout.signatoryTop + 5,
+    { align: 'right' }
+  )
+  doc.setFont('helvetica', 'bold')
+  doc.text(`For ${settings.companyName}`, bodyRight - pad, layout.signatoryTop + 10, { align: 'right' })
+  doc.setFont('helvetica', 'normal')
+  doc.text('Authorized Signatory', bodyRight - pad, layout.signatoryTop + 16, { align: 'right' })
+
+  // Terms & Condition
+  const termsText = (quotation.terms || settings.termsCondition)?.trim()
+  if (termsText && layout.termsBlockH > 0) {
+    doc.rect(bodyLeft, layout.termsTop, contentW, layout.termsBlockH)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(7)
+    doc.text('Terms & Condition', bodyLeft + contentW / 2, layout.termsTop + 4.5, { align: 'center' })
+    doc.line(bodyLeft, layout.termsTop + 6, bodyRight, layout.termsTop + 6)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(6.5)
+    let termY = layout.termsTop + 9
+    layout.termLines.forEach((line) => {
+      doc.text(line, bodyLeft + pad, termY)
+      termY += 3.2
+    })
+  }
+
+  doc.line(bodyLeft, layout.wordsRowTop, bodyLeft, layout.footerBottom)
+  doc.line(bodyRight, layout.wordsRowTop, bodyRight, layout.footerBottom)
 }
 
 export function generateQuotationPdfBuffer(
@@ -320,10 +574,9 @@ export function generateQuotationPdfBuffer(
     totalSgst += t.sgst
     totalAmount += Number(item.amount)
 
-    const name = item.description || item.product_name || '-'
     const row = [
       String(idx + 1),
-      name,
+      getProductCellParts(item).productName,
       formatHsnSac(item.hsn_code, item.sac_code),
       `${qty} ${unit}`,
       formatMoney(item.rate),
@@ -342,15 +595,47 @@ export function generateQuotationPdfBuffer(
     ? ['', 'Total', '', String(roundToTwo(totalQty)), '', formatMoney(totalTaxable), '', formatMoney(totalIgst), formatMoney(totalAmount)]
     : ['', 'Total', '', String(roundToTwo(totalQty)), '', formatMoney(totalTaxable), '', formatMoney(totalCgst), formatMoney(totalSgst), formatMoney(totalAmount)]
 
+  const itemsTableStartY = y
+  const colCount = isIgst ? 9 : 10
+  const termsSource = quotation.terms || settings.termsCondition
+  const useCompactLayout = quotation.items.length <= 2
+  const footerLayout = computeFooterLayout(doc, pageH, contentW, termsSource)
+
+  let spacerHeight = 0
+  const spacerRows: string[][] = []
+  if (useCompactLayout) {
+    const usedHeight = estimateProductsBlockHeight(doc, quotation.items, contentW)
+    spacerHeight = Math.max(12, footerLayout.totalRowTop - itemsTableStartY - usedHeight - FOOTER_TOTAL_ROW_H)
+    if (spacerHeight > 0) {
+      spacerRows.push(Array(colCount).fill(''))
+    }
+  }
+
+  const totalRowIndex = tableBody.length + spacerRows.length
+
   autoTable(doc, {
     startY: y,
     head: tableHead,
-    body: [...tableBody, totalRow],
+    body: [...tableBody, ...spacerRows, totalRow],
     margin: { left: MARGIN + 1, right: MARGIN + 1 },
-    styles: { fontSize: 6.5, cellPadding: 1.5, lineColor: BORDER, lineWidth: 0.2, textColor: TEXT },
-    headStyles: { fillColor: [255, 255, 255], textColor: TEXT, fontStyle: 'bold', halign: 'center' },
+    styles: {
+      fontSize: ITEM_TABLE_FONT_SIZE,
+      cellPadding: ITEM_TABLE_CELL_PADDING,
+      lineColor: BORDER,
+      lineWidth: TABLE_BORDER_WIDTH,
+      textColor: TEXT,
+      valign: 'top',
+    },
+    headStyles: {
+      fillColor: [255, 255, 255],
+      textColor: TEXT,
+      fontStyle: 'bold',
+      halign: 'center',
+      lineWidth: TABLE_FULL_BORDER,
+    },
     columnStyles: {
-      0: { cellWidth: 10, halign: 'center' },
+      0: { cellWidth: 10, halign: 'center', valign: 'top' },
+      1: { valign: 'top' },
       3: { halign: 'right' },
       4: { halign: 'right' },
       5: { halign: 'right' },
@@ -359,119 +644,102 @@ export function generateQuotationPdfBuffer(
         : { 6: { halign: 'center' }, 7: { halign: 'right' }, 8: { halign: 'right' }, 9: { halign: 'right', fontStyle: 'bold' } }),
     },
     didParseCell: (data) => {
-      if (data.row.index === tableBody.length && data.section === 'body') {
+      if (data.section === 'head') {
+        data.cell.styles.lineWidth = TABLE_FULL_BORDER
+        return
+      }
+
+      if (data.section !== 'body') return
+
+      const isSpacerRow =
+        spacerRows.length > 0 &&
+        data.row.index >= tableBody.length &&
+        data.row.index < totalRowIndex
+      if (isSpacerRow) {
+        data.cell.text = ['']
+        data.cell.styles.lineWidth = TABLE_VERTICAL_BORDER
+        data.cell.styles.minCellHeight = spacerHeight
+        return
+      }
+
+      const isTotalRow = data.row.index === totalRowIndex
+      if (isTotalRow) {
         data.cell.styles.fontStyle = 'bold'
         data.cell.styles.fillColor = [245, 248, 252]
+        data.cell.styles.lineWidth = {
+          ...TABLE_VERTICAL_BORDER,
+          top: TABLE_BORDER_WIDTH,
+          bottom: TABLE_BORDER_WIDTH,
+        }
+        return
       }
+
+      data.cell.styles.lineWidth = TABLE_VERTICAL_BORDER
+      data.cell.styles.valign = 'top'
+
+      if (data.column.index === 1) {
+        const item = quotation.items[data.row.index]
+        data.cell.text = ['']
+        data.cell.styles.minCellHeight = estimateProductCellHeight(
+          doc,
+          item,
+          data.cell.width
+        )
+      }
+    },
+    didDrawCell: (data) => {
+      if (data.section !== 'body' || data.column.index !== 1) return
+      if (data.row.index >= tableBody.length) return
+
+      const item = quotation.items[data.row.index]
+      const fillColor = data.cell.styles.fillColor
+      if (Array.isArray(fillColor)) {
+        doc.setFillColor(fillColor[0], fillColor[1], fillColor[2])
+        doc.rect(data.cell.x + 0.2, data.cell.y + 0.2, data.cell.width - 0.4, data.cell.height - 0.4, 'F')
+      }
+
+      drawProductCell(doc, item, data.cell.x, data.cell.y, data.cell.width)
     },
   })
 
-  y = (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y
-  y += 4
-
-  // ── Amount in words + Bank + Summary ──
-  const footerTop = y
-  const words = amountInWords(Number(quotation.total_amount))
-  doc.setFontSize(7)
-  doc.setFont('helvetica', 'bold')
-  doc.text('Total in words:', MARGIN + 3, y)
-  doc.setFont('helvetica', 'normal')
-  const wordLines = doc.splitTextToSize(words, contentW * 0.55)
-  doc.text(wordLines, MARGIN + 3, y + 4)
-
-  const bankX = MARGIN + 3
-  let bankY = y + 4 + wordLines.length * 3.5 + 4
-  doc.setFont('helvetica', 'bold')
-  doc.setTextColor(...TEXT)
-  doc.text('Bank Details:', bankX, bankY)
-  doc.setFont('helvetica', 'normal')
-  doc.setTextColor(30, 30, 30)
-  bankY += 4
-  const bankLines = [
-    `Name: ${settings.bankName || '-'}`,
-    `Branch: ${settings.bankBranch || '-'}`,
-    `Acc. Number: ${settings.bankAccount || '-'}`,
-    `IFSC: ${settings.bankIfsc || '-'}`,
-    `MICR Code: ${settings.bankMicr || '-'}`,
-    `UPI ID: ${settings.upiId || '-'}`,
-  ]
-  bankLines.forEach((line) => {
-    doc.text(line, bankX, bankY)
-    bankY += 3.5
-  })
-
-  // UPI placeholder box
-  const qrX = MARGIN + contentW * 0.42
-  const qrY = footerTop + 8
-  doc.setDrawColor(...BORDER)
-  doc.rect(qrX, qrY, 22, 22)
-  doc.setFontSize(6)
-  doc.text('Pay using UPI', qrX + 11, qrY + 26, { align: 'center' })
-
-  // Tax summary (right)
-  const sumX = pageW - MARGIN - 55
-  let sumY = footerTop + 2
-  const roundOff = Number(quotation.round_off) || 0
+  const tableEndY = (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y
   const taxAmt = Number(quotation.tax_amount) || 0
-  const summaryRows: [string, string][] = [
-    ['Taxable Amount', formatMoney(quotation.subtotal)],
-  ]
-  if (isIgst) {
-    summaryRows.push(['Add: IGST', formatMoney(taxAmt)])
-  } else {
-    summaryRows.push(['Add: CGST', formatMoney(taxAmt / 2)])
-    summaryRows.push(['Add: SGST', formatMoney(taxAmt / 2)])
-  }
-  summaryRows.push(['Total Tax', formatMoney(taxAmt)])
-  if (roundOff !== 0) summaryRows.push(['Round off Amount', formatMoney(roundOff)])
 
-  doc.setFontSize(7)
-  summaryRows.forEach(([label, val]) => {
-    doc.setFont('helvetica', 'normal')
-    doc.text(label, sumX, sumY)
-    doc.text(`₹ ${val}`, pageW - MARGIN - 3, sumY, { align: 'right' })
-    sumY += 4
-  })
+  doc.setDrawColor(...BORDER)
+  doc.setLineWidth(0.25)
+  doc.line(bodyLeft, itemsTableStartY, bodyLeft, tableEndY)
+  doc.line(bodyRight, itemsTableStartY, bodyRight, tableEndY)
 
-  sumY += 1
-  doc.setFillColor(60, 60, 60)
-  doc.setTextColor(255, 255, 255)
-  doc.rect(sumX - 2, sumY - 3, pageW - MARGIN - sumX + 4, 8, 'F')
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(8)
-  doc.text('Total Amount After Tax', sumX, sumY + 2)
-  doc.text(`₹ ${formatMoney(quotation.total_amount)}`, pageW - MARGIN - 3, sumY + 2, { align: 'right' })
-  doc.setTextColor(30, 30, 30)
-  doc.setFontSize(6)
-  doc.text('(E & O.E.)', pageW - MARGIN - 3, sumY + 7, { align: 'right' })
+  const layout = useCompactLayout
+    ? footerLayout
+    : {
+        ...footerLayout,
+        totalRowTop: tableEndY - FOOTER_TOTAL_ROW_H,
+        wordsRowTop: tableEndY,
+        bankRowTop: tableEndY + FOOTER_WORDS_ROW_H,
+        signatoryTop: tableEndY + FOOTER_WORDS_ROW_H + FOOTER_BANK_ROW_H,
+        termsTop: tableEndY + FOOTER_WORDS_ROW_H + FOOTER_BANK_ROW_H + FOOTER_SIGNATORY_H,
+        footerBottom:
+          tableEndY +
+          FOOTER_WORDS_ROW_H +
+          FOOTER_BANK_ROW_H +
+          FOOTER_SIGNATORY_H +
+          footerLayout.termsBlockH,
+      }
 
-  y = Math.max(bankY, sumY + 12)
-
-  // ── Terms ──
-  const terms = quotation.terms || settings.termsCondition
-  if (terms) {
-    doc.line(MARGIN + 1, y, pageW - MARGIN - 1, y)
-    y += 4
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(7)
-    doc.setTextColor(...TEXT)
-    doc.text('Terms & Condition:', MARGIN + 3, y)
-    doc.setFont('helvetica', 'normal')
-    doc.setTextColor(30, 30, 30)
-    y += 4
-    const termLines = doc.splitTextToSize(terms.replace(/\n/g, ' '), contentW - 80)
-    doc.text(termLines.slice(0, 8), MARGIN + 3, y)
-    y += termLines.slice(0, 8).length * 3.2
-  }
-
-  // ── Signatory ──
-  const signY = pageH - MARGIN - 22
-  doc.setFontSize(6.5)
-  doc.text('Certified that the particulars given above are true and correct.', pageW - MARGIN - 3, signY, { align: 'right' })
-  doc.setFont('helvetica', 'bold')
-  doc.text(`For ${settings.companyName}`, pageW - MARGIN - 3, signY + 5, { align: 'right' })
-  doc.setFont('helvetica', 'normal')
-  doc.text('Authorized Signatory', pageW - MARGIN - 3, signY + 18, { align: 'right' })
+  drawQuotationFooter(
+    doc,
+    bodyLeft,
+    bodyRight,
+    contentW,
+    pageW,
+    settings,
+    quotation,
+    isIgst,
+    totalTaxable,
+    taxAmt,
+    layout
+  )
 
   return doc.output('arraybuffer')
 }

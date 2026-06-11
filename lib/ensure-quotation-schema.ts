@@ -1,5 +1,8 @@
 import db from '@/lib/db'
 
+let quotationSchemaReady = false
+let ensurePromise: Promise<void> | null = null
+
 async function hasColumn(table: string, column: string): Promise<boolean> {
   const [rows] = await db.execute(
     `SELECT COUNT(*) AS cnt FROM information_schema.COLUMNS
@@ -19,7 +22,7 @@ function isDuplicateColumnError(e: unknown): boolean {
   )
 }
 
-export async function ensureQuotationSchema(): Promise<void> {
+async function runEnsureQuotationSchema(): Promise<void> {
   if (!(await hasColumn('quotations', 'round_off'))) {
     try {
       await db.execute(
@@ -57,4 +60,16 @@ export async function ensureQuotationSchema(): Promise<void> {
   } catch {
     // column may already be correct
   }
+
+  quotationSchemaReady = true
+}
+
+export async function ensureQuotationSchema(): Promise<void> {
+  if (quotationSchemaReady) return
+  if (!ensurePromise) {
+    ensurePromise = runEnsureQuotationSchema().finally(() => {
+      ensurePromise = null
+    })
+  }
+  return ensurePromise
 }

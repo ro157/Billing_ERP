@@ -6,7 +6,7 @@ export function computeQuotationItemTotals(item: {
   rate: number
   discount?: number
   gstRate: number
-}, gstType = 'CGST_SGST') {
+}, gstType: 'CGST_SGST' | 'IGST' | 'EXEMPT' = 'CGST_SGST') {
   const taxable = roundToTwo(item.quantity * item.rate)
   const gst = calculateGST(taxable, item.gstRate || 0, gstType)
   const totalWithGst = roundToTwo(taxable + gst.total)
@@ -15,7 +15,10 @@ export function computeQuotationItemTotals(item: {
   return { taxable, cgst: gst.cgst, sgst: gst.sgst, igst: gst.igst, total, discAmt }
 }
 
-export function buildQuotationTotals(items: any[], gstType: string) {
+export function buildQuotationTotals(
+  items: any[],
+  gstType: 'CGST_SGST' | 'IGST' | 'EXEMPT' = 'CGST_SGST'
+) {
   let subtotal = 0
   let totalDiscount = 0
   let totalCgst = 0

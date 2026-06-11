@@ -11,15 +11,16 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { CardContent, CardFooter } from '@/components/ui/card'
 import { AuthCard } from '@/components/auth/auth-card'
-import { useToast } from '@/hooks/use-toast'
+import { ConsoleMessage, CONSOLE_MESSAGE_DURATION_MS } from '@/components/shared/console-message'
+import { useConsoleMessage } from '@/hooks/use-console-message'
 import { Loader2, Eye, EyeOff } from 'lucide-react'
 import Link from 'next/link'
 
 export default function LoginPage() {
   const router = useRouter()
-  const { toast } = useToast()
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
+  const { message, showSuccess, showError, clearMessage } = useConsoleMessage()
 
   const form = useForm<LoginInput>({
     resolver: zodResolver(loginSchema),
@@ -28,6 +29,7 @@ export default function LoginPage() {
 
   const onSubmit = async (data: LoginInput) => {
     setLoading(true)
+    clearMessage()
     try {
       const result = await signIn('credentials', {
         email: data.email,
@@ -36,14 +38,10 @@ export default function LoginPage() {
       })
 
       if (result?.error) {
-        toast({
-          title: 'Login Failed',
-          description: 'Invalid email or password',
-          variant: 'destructive',
-        })
+        showError('Invalid email or password. Please check your credentials and try again.')
       } else {
-        router.push('/dashboard')
-        router.refresh()
+        showSuccess('Login successful! Redirecting to dashboard...')
+        setTimeout(() => router.replace('/dashboard'), CONSOLE_MESSAGE_DURATION_MS)
       }
     } finally {
       setLoading(false)
@@ -54,13 +52,17 @@ export default function LoginPage() {
     <AuthCard title="Welcome">
       <form onSubmit={form.handleSubmit(onSubmit)}>
         <CardContent className="space-y-4">
+          {message && <ConsoleMessage type={message.type} text={message.text} />}
+
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
             <Input
               id="email"
               type="text"
               placeholder="Enter your email"
-              {...form.register('email')}
+              {...form.register('email', {
+                onChange: () => clearMessage(),
+              })}
             />
             {form.formState.errors.email && (
               <p className="text-destructive text-sm">{form.formState.errors.email.message}</p>
@@ -75,7 +77,9 @@ export default function LoginPage() {
                 type={showPassword ? 'text' : 'password'}
                 placeholder="••••••••"
                 className="pr-10"
-                {...form.register('password')}
+                {...form.register('password', {
+                  onChange: () => clearMessage(),
+                })}
               />
               <button
                 type="button"

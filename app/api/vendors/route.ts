@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { vendorSchema } from '@/lib/validations'
 import { ensureVendorContactPersonColumn } from '@/lib/ensure-vendor-schema'
 import { randomUUID } from 'crypto'
+import { apiErrorResponse } from '@/lib/api-error'
 
 function optionalToNull(value: string | undefined | null): string | null {
   if (value === undefined || value === null) return null
@@ -29,15 +30,19 @@ export async function GET(req: NextRequest) {
     params = [s, s, s, s, s, s]
   }
 
-  const [rows] = await db.execute(
-    `SELECT * FROM vendors ${whereClause} ORDER BY name ASC LIMIT ? OFFSET ?`,
-    [...params, limit, offset]
-  ) as any[]
-  const [countRows] = await db.execute(
-    `SELECT COUNT(*) as total FROM vendors ${whereClause}`, params
-  ) as any[]
+  try {
+    const [rows] = await db.execute(
+      `SELECT * FROM vendors ${whereClause} ORDER BY name ASC LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
+    ) as any[]
+    const [countRows] = await db.execute(
+      `SELECT COUNT(*) as total FROM vendors ${whereClause}`, params
+    ) as any[]
 
-  return NextResponse.json({ vendors: rows, total: countRows[0].total, page, limit })
+    return NextResponse.json({ vendors: rows, total: countRows[0].total, page, limit })
+  } catch (err) {
+    return apiErrorResponse(err, 'GET /api/vendors')
+  }
 }
 
 export async function POST(req: NextRequest) {

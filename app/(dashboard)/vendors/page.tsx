@@ -12,8 +12,11 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useToast } from '@/hooks/use-toast'
-import { Plus, Search, Edit, Eye, Trash2, Truck, LayoutGrid, Table2, MapPin } from 'lucide-react'
+import { Edit, Eye, Trash2, Truck, MapPin } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
+import { sanitizeGstinInput, sanitizeMobileInput } from '@/lib/field-validation'
+import { ListPageToolbar } from '@/components/shared/list-page-toolbar'
+import { parseJsonResponse } from '@/lib/fetch-json'
 
 interface Vendor {
   id: string
@@ -53,6 +56,8 @@ const emptyFormValues: VendorInput = {
   city: '',
   state: '',
   pincode: '',
+  creditLimit: 0,
+  openingBalance: 0,
   isActive: true,
 }
 
@@ -76,6 +81,8 @@ function vendorToFormValues(v: Vendor): VendorInput {
     city: v.city || '',
     state: v.state || '',
     pincode: v.pincode || '',
+    creditLimit: 0,
+    openingBalance: 0,
     isActive: true,
   }
 }
@@ -146,9 +153,16 @@ export default function VendorsPage() {
       const params = new URLSearchParams({ page: String(page), limit: '20' })
       if (search) params.set('search', search)
       const res = await fetch(`/api/vendors?${params}`)
-      const data = await res.json()
-      setVendors(data.vendors)
-      setTotal(data.total)
+      const data = await parseJsonResponse<{ vendors?: Vendor[]; total?: number; error?: string }>(res)
+      if (!res.ok) {
+        toast({ title: data.error || 'Failed to load vendors', variant: 'destructive' })
+        return
+      }
+      setVendors(data.vendors || [])
+      setTotal(Number(data.total) || 0)
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Failed to load vendors'
+      toast({ title: message, variant: 'destructive' })
     } finally {
       setLoading(false)
     }
@@ -168,7 +182,7 @@ export default function VendorsPage() {
     setViewing(v)
     try {
       const res = await fetch(`/api/vendors/${v.id}`)
-      if (res.ok) setViewing(await res.json())
+      if (res.ok) setViewing(await parseJsonResponse<VendorDetail>(res))
     } finally {
       setViewLoading(false)
     }
@@ -193,7 +207,7 @@ export default function VendorsPage() {
       toast({ title: 'Vendor deleted' })
       fetchVendors()
     } else {
-      const err = await res.json()
+      const err = await parseJsonResponse<{ error?: string }>(res)
       toast({ title: 'Error', description: err.error || 'Cannot delete', variant: 'destructive' })
     }
   }
@@ -205,7 +219,7 @@ export default function VendorsPage() {
       const method = editing ? 'PUT' : 'POST'
       const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
       if (!res.ok) {
-        const err = await res.json()
+        const err = await parseJsonResponse<{ error?: unknown }>(res)
         toast({ title: 'Error', description: formatApiError(err.error), variant: 'destructive' })
         return
       }
@@ -233,48 +247,20 @@ export default function VendorsPage() {
 
   return (
     <div className="space-y-4 md:space-y-6 min-w-0">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold">Vendors</h1>
-          <p className="text-sm sm:text-base text-muted-foreground">{total} vendor(s)</p>
-        </div>
-        <Button onClick={openNew} className="h-9 w-full sm:w-auto">
-          <Plus className="w-4 h-4 shrink-0 mr-1.5" />
-          <span className="text-sm">Add Vendor</span>
-        </Button>
+      <div className="min-w-0">
+        <h1 className="text-xl sm:text-2xl font-bold">Vendors</h1>
+        <p className="text-sm sm:text-base text-muted-foreground">{total} vendor(s)</p>
       </div>
 
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <div className="relative flex-1 min-w-0">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Search vendors..."
-            className="pl-9 h-9 bg-background"
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-          />
-        </div>
-        <div className="hidden md:flex items-center gap-1 rounded-md border bg-background p-1 shrink-0">
-          <Button
-            variant={viewMode === 'table' ? 'secondary' : 'outline'}
-            size="icon"
-            className="h-8 w-8"
-            title="Table view"
-            onClick={() => setViewMode('table')}
-          >
-            <Table2 className="h-4 w-4" />
-          </Button>
-          <Button
-            variant={viewMode === 'card' ? 'secondary' : 'outline'}
-            size="icon"
-            className="h-8 w-8"
-            title="Card view"
-            onClick={() => setViewMode('card')}
-          >
-            <LayoutGrid className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
+      <ListPageToolbar
+        searchPlaceholder="Search vendors..."
+        search={search}
+        onSearchChange={(v) => { setSearch(v); setPage(1) }}
+        addLabel="Add Vendor"
+        onAddClick={openNew}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+      />
 
       {showTable && (
         <Card className="overflow-x-auto">
@@ -508,7 +494,15 @@ export default function VendorsPage() {
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs sm:text-sm">Phone *</Label>
-                  <Input className="h-9" {...form.register('phone')} />
+                  <Input
+                    className="h-9"
+                    type="tel"
+                    inputMode="numeric"
+                    maxLength={10}
+                    {...form.register('phone', {
+                      setValueAs: (v) => sanitizeMobileInput(String(v ?? '')),
+                    })}
+                  />
                   {form.formState.errors.phone && (
                     <p className="text-destructive text-xs">{form.formState.errors.phone.message}</p>
                   )}
@@ -522,7 +516,13 @@ export default function VendorsPage() {
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs sm:text-sm">GSTIN *</Label>
-                  <Input className="h-9 uppercase" {...form.register('gstin')} />
+                  <Input
+                    className="h-9 uppercase font-mono text-sm"
+                    maxLength={15}
+                    {...form.register('gstin', {
+                      setValueAs: (v) => sanitizeGstinInput(String(v ?? '')),
+                    })}
+                  />
                   {form.formState.errors.gstin && (
                     <p className="text-destructive text-xs">{form.formState.errors.gstin.message}</p>
                   )}

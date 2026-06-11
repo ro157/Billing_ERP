@@ -1,5 +1,8 @@
 import db from '@/lib/db'
 
+let invoiceSchemaReady = false
+let ensurePromise: Promise<void> | null = null
+
 async function hasColumn(table: string, column: string): Promise<boolean> {
   const [rows] = await db.execute(
     `SELECT COUNT(*) AS cnt FROM information_schema.COLUMNS
@@ -19,7 +22,7 @@ function isDuplicateColumnError(e: unknown): boolean {
   )
 }
 
-export async function ensureInvoiceSchema(): Promise<void> {
+async function runEnsureInvoiceSchema(): Promise<void> {
   if (!(await hasColumn('invoices', 'party_details'))) {
     try {
       await db.execute(
@@ -29,4 +32,16 @@ export async function ensureInvoiceSchema(): Promise<void> {
       if (!isDuplicateColumnError(e)) throw e
     }
   }
+
+  invoiceSchemaReady = true
+}
+
+export async function ensureInvoiceSchema(): Promise<void> {
+  if (invoiceSchemaReady) return
+  if (!ensurePromise) {
+    ensurePromise = runEnsureInvoiceSchema().finally(() => {
+      ensurePromise = null
+    })
+  }
+  return ensurePromise
 }
