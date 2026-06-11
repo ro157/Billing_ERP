@@ -243,23 +243,52 @@ function inferGstType(companyState?: string | null, customerState?: string | nul
 }
 
 const FOOTER_TOTAL_ROW_H = 7
-const FOOTER_WORDS_ROW_H = 11
-const FOOTER_BANK_ROW_H = 42
-const FOOTER_SIGNATORY_H = 20
+const FOOTER_LEFT_RATIO = 0.58
+const FOOTER_WORDS_H = 11
+const FOOTER_BANK_BODY_H = 36
+const FOOTER_SIGN_IN_RIGHT_H = 17
+const FOOTER_LIGHT_BLUE: [number, number, number] = [232, 240, 250]
+const FOOTER_SUMMARY_ROW_H = 5.5
+/** Helvetica lacks U+20B9; Rs. renders reliably in jsPDF */
+const PDF_RUPEE = 'Rs.'
+
+function itemsTableBorderAllowance(colCount: number): number {
+  return (colCount + 1) * TABLE_BORDER_WIDTH
+}
+
+function getSummaryRowCount(isIgst: boolean): number {
+  return isIgst ? 6 : 7
+}
+
+function getSummaryTableH(isIgst: boolean): number {
+  return getSummaryRowCount(isIgst) * FOOTER_SUMMARY_ROW_H + 0.5
+}
+
+function getFooterMainH(isIgst: boolean): number {
+  const leftH = FOOTER_WORDS_H + FOOTER_BANK_BODY_H
+  const rightH = getSummaryTableH(isIgst) + FOOTER_SIGN_IN_RIGHT_H
+  return Math.max(leftH, rightH)
+}
 
 type FooterLayout = {
   totalRowTop: number
-  wordsRowTop: number
-  bankRowTop: number
-  signatoryTop: number
+  mainFooterTop: number
+  mainFooterH: number
   termsTop: number
   footerBottom: number
   termsBlockH: number
   termLines: string[]
 }
 
-function computeFooterLayout(doc: jsPDF, pageH: number, contentW: number, terms?: string | null): FooterLayout {
+function computeFooterLayout(
+  doc: jsPDF,
+  pageH: number,
+  contentW: number,
+  terms: string | null | undefined,
+  isIgst: boolean
+): FooterLayout {
   const bottom = pageH - MARGIN
+  const mainFooterH = getFooterMainH(isIgst)
   const termsText = terms?.trim()
   const termLines = termsText
     ? doc.splitTextToSize(termsText.replace(/\r\n/g, '\n'), contentW - 8).slice(0, 12)
@@ -268,16 +297,151 @@ function computeFooterLayout(doc: jsPDF, pageH: number, contentW: number, terms?
 
   const footerBottom = bottom
   const termsTop = footerBottom - termsBlockH
-  const signatoryTop = termsTop - FOOTER_SIGNATORY_H
-  const bankRowTop = signatoryTop - FOOTER_BANK_ROW_H
-  const wordsRowTop = bankRowTop - FOOTER_WORDS_ROW_H
-  const totalRowTop = wordsRowTop - FOOTER_TOTAL_ROW_H
+  const mainFooterTop = termsTop - mainFooterH
+  const totalRowTop = mainFooterTop - FOOTER_TOTAL_ROW_H
 
-  return { totalRowTop, wordsRowTop, bankRowTop, signatoryTop, termsTop, footerBottom, termsBlockH, termLines }
+  return { totalRowTop, mainFooterTop, mainFooterH, termsTop, footerBottom, termsBlockH, termLines }
 }
 
-function estimateProductsBlockHeight(doc: jsPDF, items: QuotationPdfItem[], contentW: number): number {
-  const productColW = contentW * 0.28
+type SummaryTableRow = {
+  label: string
+  value: string
+  valueFontSize?: number
+  valueOnly?: boolean
+  whiteBg?: boolean
+}
+
+function drawTaxSummaryTable(
+  doc: jsPDF,
+  x: number,
+  y: number,
+  width: number,
+  maxHeight: number,
+  isIgst: boolean,
+  totalTaxable: number,
+  taxAmt: number,
+  roundOff: number,
+  totalAmount: number
+): number {
+  const rows: SummaryTableRow[] = [{ label: 'Taxable Amount', value: formatMoney(totalTaxable) }]
+  if (isIgst) {
+    rows.push({ label: 'Add : IGST', value: formatMoney(taxAmt) })
+  } else {
+    rows.push({ label: 'Add : CGST', value: formatMoney(taxAmt / 2) })
+    rows.push({ label: 'Add : SGST', value: formatMoney(taxAmt / 2) })
+  }
+  rows.push({ label: 'Total Tax', value: formatMoney(taxAmt) })
+  rows.push({ label: 'Round off Amount', value: formatMoney(roundOff) })
+  rows.push({
+    label: 'Total Amount After Tax',
+    value: `${PDF_RUPEE} ${formatMoney(totalAmount)}`,
+    valueFontSize: 6.2,
+  })
+  rows.push({ label: '', value: '(E & O.E.)', valueOnly: true, whiteBg: true })
+
+  const rowH = maxHeight / rows.length
+  const labelColW = width * 0.56
+  const pad = 1.8
+  const valueRightX = x + width - pad
+  const valueMaxW = width - labelColW - pad * 2
+  let cy = y
+
+  doc.setDrawColor(...BORDER)
+  doc.setLineWidth(0.25)
+  doc.setTextColor(...TEXT)
+
+  rows.forEach((row) => {
+    const bg = row.whiteBg ? [255, 255, 255] : FOOTER_LIGHT_BLUE
+    doc.setFillColor(bg[0], bg[1], bg[2])
+    doc.rect(x, cy, width, rowH, 'FD')
+    doc.line(x + labelColW, cy, x + labelColW, cy + rowH)
+
+    const textY = cy + rowH / 2 + 1.4
+
+    if (!row.valueOnly && row.label) {
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(5.8)
+      const labelLines = doc.splitTextToSize(row.label, labelColW - pad * 2)
+      doc.text(labelLines[0], x + pad, textY)
+    }
+
+    doc.setFont('helvetica', row.valueOnly ? 'normal' : 'bold')
+    doc.setFontSize(row.valueFontSize ?? 5.8)
+    doc.text(row.value, valueRightX, textY, { align: 'right', maxWidth: valueMaxW })
+
+    cy += rowH
+  })
+
+  return cy
+}
+
+function getItemsTableColumnStyles(contentW: number, isIgst: boolean): Record<number, object> {
+  const tableW = contentW - itemsTableBorderAllowance(isIgst ? 9 : 10)
+  if (isIgst) {
+    const w = {
+      0: 7,
+      2: 11,
+      3: 11,
+      4: 13,
+      5: 15,
+      6: 8,
+      7: 14,
+      8: 17,
+    }
+    const fixed = Object.values(w).reduce((s, n) => s + n, 0)
+    return {
+      0: { cellWidth: w[0], halign: 'center', valign: 'top' },
+      1: { cellWidth: tableW - fixed, valign: 'top' },
+      2: { cellWidth: w[2], halign: 'center' },
+      3: { cellWidth: w[3], halign: 'right' },
+      4: { cellWidth: w[4], halign: 'right' },
+      5: { cellWidth: w[5], halign: 'right' },
+      6: { cellWidth: w[6], halign: 'center' },
+      7: { cellWidth: w[7], halign: 'right' },
+      8: { cellWidth: w[8], halign: 'right', fontStyle: 'bold', overflow: 'linebreak' },
+    }
+  }
+
+  const w = {
+    0: 7,
+    2: 10,
+    3: 10,
+    4: 12,
+    5: 14,
+    6: 7,
+    7: 11,
+    8: 11,
+    9: 15,
+  }
+  const fixed = Object.values(w).reduce((s, n) => s + n, 0)
+  return {
+    0: { cellWidth: w[0], halign: 'center', valign: 'top' },
+    1: { cellWidth: tableW - fixed, valign: 'top' },
+    2: { cellWidth: w[2], halign: 'center' },
+    3: { cellWidth: w[3], halign: 'right' },
+    4: { cellWidth: w[4], halign: 'right' },
+    5: { cellWidth: w[5], halign: 'right' },
+    6: { cellWidth: w[6], halign: 'center' },
+    7: { cellWidth: w[7], halign: 'right' },
+    8: { cellWidth: w[8], halign: 'right' },
+    9: { cellWidth: w[9], halign: 'right', fontStyle: 'bold', overflow: 'linebreak' },
+  }
+}
+
+function getProductColumnWidth(contentW: number, isIgst: boolean): number {
+  const colCount = isIgst ? 9 : 10
+  const tableW = contentW - itemsTableBorderAllowance(colCount)
+  const fixed = isIgst ? 96 : 97
+  return tableW - fixed
+}
+
+function estimateProductsBlockHeight(
+  doc: jsPDF,
+  items: QuotationPdfItem[],
+  contentW: number,
+  isIgst: boolean
+): number {
+  const productColW = getProductColumnWidth(contentW, isIgst)
   let productsH = 0
   for (const item of items) {
     productsH += Math.max(7, estimateProductCellHeight(doc, item, productColW))
@@ -290,7 +454,6 @@ function drawQuotationFooter(
   bodyLeft: number,
   bodyRight: number,
   contentW: number,
-  pageW: number,
   settings: QuotationPdfSettings,
   quotation: QuotationPdfData,
   isIgst: boolean,
@@ -298,40 +461,47 @@ function drawQuotationFooter(
   taxAmt: number,
   layout: FooterLayout
 ): void {
-  const words = amountInWords(Number(quotation.total_amount))
+  const words = amountInWords(Number(quotation.total_amount)).toUpperCase()
   const roundOff = Number(quotation.round_off) || 0
   const pad = 2
+  const top = layout.mainFooterTop
+  const mainH = layout.mainFooterH
+  const leftW = contentW * FOOTER_LEFT_RATIO
+  const rightW = contentW - leftW
+  const splitX = bodyLeft + leftW
+  const bankTop = top + FOOTER_WORDS_H
+  const bankH = mainH - FOOTER_WORDS_H
+  const bankQrW = leftW * 0.3
+  const bankTextW = leftW - bankQrW
+  const bankTextX = bodyLeft
+  const qrColX = bodyLeft + bankTextW
 
   doc.setDrawColor(...BORDER)
   doc.setLineWidth(0.25)
+  doc.setFillColor(255, 255, 255)
 
-  // Total in words row
-  doc.rect(bodyLeft, layout.wordsRowTop, contentW, FOOTER_WORDS_ROW_H)
-  doc.setFontSize(7)
+  // Main 2-column footer box
+  doc.rect(bodyLeft, top, contentW, mainH, 'FD')
+  doc.line(splitX, top, splitX, top + mainH)
+
+  // Left — Total in words
+  doc.line(bodyLeft, bankTop, splitX, bankTop)
+  doc.setFontSize(6.5)
   doc.setTextColor(...TEXT)
   doc.setFont('helvetica', 'bold')
-  doc.text('Total in words', bodyLeft + pad, layout.wordsRowTop + 4)
+  doc.text('Total in words', bodyLeft + leftW / 2, top + 4.2, { align: 'center' })
   doc.setFont('helvetica', 'normal')
-  const wordLines = doc.splitTextToSize(words, contentW - pad * 2)
-  doc.text(wordLines.slice(0, 2), bodyLeft + pad, layout.wordsRowTop + 7.5)
+  doc.setFontSize(6)
+  const wordLines = doc.splitTextToSize(words, leftW - pad * 2)
+  doc.text(wordLines.slice(0, 2), bodyLeft + leftW / 2, top + 7.5, { align: 'center' })
 
-  // Bank details | UPI | Tax summary
-  const bankColW = contentW * 0.48
-  const qrColW = contentW * 0.22
-  const sumColW = contentW - bankColW - qrColW
-  const bankX = bodyLeft
-  const qrX = bodyLeft + bankColW
-  const sumX = qrX + qrColW
-
-  doc.rect(bodyLeft, layout.bankRowTop, contentW, FOOTER_BANK_ROW_H)
-  doc.line(qrX, layout.bankRowTop, qrX, layout.bankRowTop + FOOTER_BANK_ROW_H)
-  doc.line(sumX, layout.bankRowTop, sumX, layout.bankRowTop + FOOTER_BANK_ROW_H)
-
-  let bankY = layout.bankRowTop + 4
+  // Left — Bank details + QR
   doc.setFont('helvetica', 'bold')
-  doc.text('Bank Details', bankX + pad, bankY)
-  doc.setFont('helvetica', 'normal')
-  bankY += 4
+  doc.setFontSize(6.5)
+  doc.text('Bank Details', bodyLeft + bankTextW / 2, bankTop + 4, { align: 'center' })
+  doc.line(qrColX, bankTop, qrColX, top + mainH)
+
+  let bankY = bankTop + 7
   const bankLines = [
     ['Name', settings.bankName || '-'],
     ['Branch', settings.bankBranch || '-'],
@@ -342,72 +512,57 @@ function drawQuotationFooter(
   ]
   bankLines.forEach(([label, value]) => {
     doc.setFont('helvetica', 'bold')
-    doc.text(`${label} :`, bankX + pad, bankY)
+    doc.setFontSize(5.8)
+    doc.text(`${label} :`, bankTextX + pad, bankY)
     doc.setFont('helvetica', 'normal')
-    const labelW = doc.getTextWidth(`${label} :`) + 1
-    const wrapped = doc.splitTextToSize(value, bankColW - pad * 2 - labelW)
-    doc.text(wrapped[0] || '-', bankX + pad + labelW, bankY)
-    bankY += wrapped.length > 1 ? 3.2 * wrapped.length : 3.2
+    const labelW = doc.getTextWidth(`${label} :`) + 0.5
+    const wrapped = doc.splitTextToSize(value, bankTextW - pad * 2 - labelW)
+    doc.text(wrapped[0] || '-', bankTextX + pad + labelW, bankY)
+    bankY += 3
   })
 
-  const qrSize = 18
-  const qrBoxX = qrX + (qrColW - qrSize) / 2
-  const qrBoxY = layout.bankRowTop + 6
+  const qrSize = 16
+  const qrBoxX = qrColX + (bankQrW - qrSize) / 2
+  const qrBoxY = bankTop + (bankH - qrSize - 5) / 2
   doc.rect(qrBoxX, qrBoxY, qrSize, qrSize)
-  doc.setFontSize(5.5)
-  doc.text('Pay using UPI', qrX + qrColW / 2, qrBoxY + qrSize + 3.5, { align: 'center' })
+  doc.setFontSize(5)
+  doc.text('Pay using UPI', qrColX + bankQrW / 2, qrBoxY + qrSize + 3, { align: 'center' })
 
-  let sumY = layout.bankRowTop + 4
-  const summaryRows: [string, string][] = [['Taxable Amount', formatMoney(totalTaxable)]]
-  if (isIgst) {
-    summaryRows.push(['Add : IGST', formatMoney(taxAmt)])
-  } else {
-    summaryRows.push(['Add : CGST', formatMoney(taxAmt / 2)])
-    summaryRows.push(['Add : SGST', formatMoney(taxAmt / 2)])
-  }
-  summaryRows.push(['Total Tax', formatMoney(taxAmt)])
-  summaryRows.push(['Round off Amount', formatMoney(roundOff)])
-
-  doc.setFontSize(7)
-  summaryRows.forEach(([label, val]) => {
-    doc.setFont('helvetica', 'normal')
-    doc.setTextColor(...TEXT)
-    doc.text(label, sumX + pad, sumY)
-    doc.text(val, bodyRight - pad, sumY, { align: 'right' })
-    sumY += 3.8
-  })
-
-  const totalBarY = layout.bankRowTop + FOOTER_BANK_ROW_H - 10
-  doc.setFillColor(60, 60, 60)
-  doc.rect(sumX + 1, totalBarY, sumColW - 2, 7, 'F')
-  doc.setTextColor(255, 255, 255)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(7)
-  doc.text('Total Amount After Tax', sumX + pad, totalBarY + 4.8)
-  doc.text(`₹ ${formatMoney(quotation.total_amount)}`, bodyRight - pad, totalBarY + 4.8, { align: 'right' })
+  // Right — Tax summary + signatory
+  const signTop = top + mainH - FOOTER_SIGN_IN_RIGHT_H
+  drawTaxSummaryTable(
+    doc,
+    splitX,
+    top,
+    rightW,
+    signTop - top,
+    isIgst,
+    totalTaxable,
+    taxAmt,
+    roundOff,
+    Number(quotation.total_amount)
+  )
+  doc.line(splitX, signTop, bodyRight, signTop)
+  doc.setFontSize(5.8)
   doc.setTextColor(...TEXT)
-  doc.setFontSize(5.5)
   doc.setFont('helvetica', 'normal')
-  doc.text('(E & O.E.)', bodyRight - pad, layout.bankRowTop + FOOTER_BANK_ROW_H - 2.5, { align: 'right' })
-
-  // Signatory
-  doc.rect(bodyLeft, layout.signatoryTop, contentW, FOOTER_SIGNATORY_H)
-  doc.setFontSize(6.5)
   doc.text(
     'Certified that the particulars given above are true and correct.',
     bodyRight - pad,
-    layout.signatoryTop + 5,
+    signTop + 4.5,
     { align: 'right' }
   )
   doc.setFont('helvetica', 'bold')
-  doc.text(`For ${settings.companyName}`, bodyRight - pad, layout.signatoryTop + 10, { align: 'right' })
+  doc.setFontSize(6)
+  doc.text(`For ${settings.companyName}`, bodyRight - pad, signTop + 9, { align: 'right' })
   doc.setFont('helvetica', 'normal')
-  doc.text('Authorized Signatory', bodyRight - pad, layout.signatoryTop + 16, { align: 'right' })
+  doc.setFontSize(5.8)
+  doc.text('Authorized Signatory', bodyRight - pad, signTop + 14, { align: 'right' })
 
-  // Terms & Condition
+  // Terms & Condition (full width below main footer)
   const termsText = (quotation.terms || settings.termsCondition)?.trim()
   if (termsText && layout.termsBlockH > 0) {
-    doc.rect(bodyLeft, layout.termsTop, contentW, layout.termsBlockH)
+    doc.rect(bodyLeft, layout.termsTop, contentW, layout.termsBlockH, 'FD')
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(7)
     doc.text('Terms & Condition', bodyLeft + contentW / 2, layout.termsTop + 4.5, { align: 'center' })
@@ -420,9 +575,6 @@ function drawQuotationFooter(
       termY += 3.2
     })
   }
-
-  doc.line(bodyLeft, layout.wordsRowTop, bodyLeft, layout.footerBottom)
-  doc.line(bodyRight, layout.wordsRowTop, bodyRight, layout.footerBottom)
 }
 
 export function generateQuotationPdfBuffer(
@@ -599,12 +751,13 @@ export function generateQuotationPdfBuffer(
   const colCount = isIgst ? 9 : 10
   const termsSource = quotation.terms || settings.termsCondition
   const useCompactLayout = quotation.items.length <= 2
-  const footerLayout = computeFooterLayout(doc, pageH, contentW, termsSource)
+  const mainFooterH = getFooterMainH(isIgst)
+  const footerLayout = computeFooterLayout(doc, pageH, contentW, termsSource, isIgst)
 
   let spacerHeight = 0
   const spacerRows: string[][] = []
   if (useCompactLayout) {
-    const usedHeight = estimateProductsBlockHeight(doc, quotation.items, contentW)
+    const usedHeight = estimateProductsBlockHeight(doc, quotation.items, contentW, isIgst)
     spacerHeight = Math.max(12, footerLayout.totalRowTop - itemsTableStartY - usedHeight - FOOTER_TOTAL_ROW_H)
     if (spacerHeight > 0) {
       spacerRows.push(Array(colCount).fill(''))
@@ -617,7 +770,8 @@ export function generateQuotationPdfBuffer(
     startY: y,
     head: tableHead,
     body: [...tableBody, ...spacerRows, totalRow],
-    margin: { left: MARGIN + 1, right: MARGIN + 1 },
+    margin: { left: bodyLeft, right: pageW - bodyRight },
+    tableWidth: contentW - itemsTableBorderAllowance(colCount),
     styles: {
       fontSize: ITEM_TABLE_FONT_SIZE,
       cellPadding: ITEM_TABLE_CELL_PADDING,
@@ -625,6 +779,7 @@ export function generateQuotationPdfBuffer(
       lineWidth: TABLE_BORDER_WIDTH,
       textColor: TEXT,
       valign: 'top',
+      overflow: 'linebreak',
     },
     headStyles: {
       fillColor: [255, 255, 255],
@@ -632,17 +787,9 @@ export function generateQuotationPdfBuffer(
       fontStyle: 'bold',
       halign: 'center',
       lineWidth: TABLE_FULL_BORDER,
+      fontSize: 6,
     },
-    columnStyles: {
-      0: { cellWidth: 10, halign: 'center', valign: 'top' },
-      1: { valign: 'top' },
-      3: { halign: 'right' },
-      4: { halign: 'right' },
-      5: { halign: 'right' },
-      ...(isIgst
-        ? { 6: { halign: 'center' }, 7: { halign: 'right' }, 8: { halign: 'right', fontStyle: 'bold' } }
-        : { 6: { halign: 'center' }, 7: { halign: 'right' }, 8: { halign: 'right' }, 9: { halign: 'right', fontStyle: 'bold' } }),
-    },
+    columnStyles: getItemsTableColumnStyles(contentW, isIgst),
     didParseCell: (data) => {
       if (data.section === 'head') {
         data.cell.styles.lineWidth = TABLE_FULL_BORDER
@@ -705,26 +852,15 @@ export function generateQuotationPdfBuffer(
   const tableEndY = (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y
   const taxAmt = Number(quotation.tax_amount) || 0
 
-  doc.setDrawColor(...BORDER)
-  doc.setLineWidth(0.25)
-  doc.line(bodyLeft, itemsTableStartY, bodyLeft, tableEndY)
-  doc.line(bodyRight, itemsTableStartY, bodyRight, tableEndY)
-
   const layout = useCompactLayout
     ? footerLayout
     : {
         ...footerLayout,
         totalRowTop: tableEndY - FOOTER_TOTAL_ROW_H,
-        wordsRowTop: tableEndY,
-        bankRowTop: tableEndY + FOOTER_WORDS_ROW_H,
-        signatoryTop: tableEndY + FOOTER_WORDS_ROW_H + FOOTER_BANK_ROW_H,
-        termsTop: tableEndY + FOOTER_WORDS_ROW_H + FOOTER_BANK_ROW_H + FOOTER_SIGNATORY_H,
-        footerBottom:
-          tableEndY +
-          FOOTER_WORDS_ROW_H +
-          FOOTER_BANK_ROW_H +
-          FOOTER_SIGNATORY_H +
-          footerLayout.termsBlockH,
+        mainFooterTop: tableEndY,
+        mainFooterH,
+        termsTop: tableEndY + mainFooterH,
+        footerBottom: tableEndY + mainFooterH + footerLayout.termsBlockH,
       }
 
   drawQuotationFooter(
@@ -732,7 +868,6 @@ export function generateQuotationPdfBuffer(
     bodyLeft,
     bodyRight,
     contentW,
-    pageW,
     settings,
     quotation,
     isIgst,
@@ -740,6 +875,11 @@ export function generateQuotationPdfBuffer(
     taxAmt,
     layout
   )
+
+  doc.setDrawColor(...BORDER)
+  doc.setLineWidth(0.25)
+  doc.line(bodyLeft, itemsTableStartY, bodyLeft, layout.footerBottom)
+  doc.line(bodyRight, itemsTableStartY, bodyRight, layout.footerBottom)
 
   return doc.output('arraybuffer')
 }
