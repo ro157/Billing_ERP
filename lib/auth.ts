@@ -44,19 +44,41 @@ export const authOptions: NextAuthOptions = {
           throw new Error('Invalid credentials')
         }
 
-        const [permRows] = await db.execute(
-          `SELECT p.module, p.action
-           FROM staff_roles sr
-           JOIN role_permissions rp ON sr.role_id = rp.role_id
-           JOIN permissions p ON rp.permission_id = p.id
-           WHERE sr.user_id = ?`,
-          [user.id]
-        ) as any[]
+        let permissions: string[] = []
 
-        const permissions: string[] = []
-        for (const row of permRows) {
-          const key = `${row.module}:${row.action}`
-          if (!permissions.includes(key)) permissions.push(key)
+        if (user.role === 'ADMIN') {
+          permissions = ['*']
+        } else {
+          try {
+            const { ensureStaffPermissionsSchema } = await import('@/lib/ensure-staff-permissions-schema')
+            await ensureStaffPermissionsSchema()
+          } catch {
+            // Table may not exist yet on older installs
+          }
+
+          const [modRows] = await db.execute(
+            'SELECT module FROM staff_module_permissions WHERE user_id = ?',
+            [user.id]
+          ) as any[]
+
+          if (modRows.length > 0) {
+            const { expandModulesToPermissions } = await import('@/lib/permissions')
+            permissions = expandModulesToPermissions(modRows.map((r: any) => r.module))
+          } else {
+            const [permRows] = await db.execute(
+              `SELECT p.module, p.action
+               FROM staff_roles sr
+               JOIN role_permissions rp ON sr.role_id = rp.role_id
+               JOIN permissions p ON rp.permission_id = p.id
+               WHERE sr.user_id = ?`,
+              [user.id]
+            ) as any[]
+
+            for (const row of permRows) {
+              const key = `${row.module}:${row.action}`
+              if (!permissions.includes(key)) permissions.push(key)
+            }
+          }
         }
 
         return {

@@ -23,9 +23,11 @@ export async function requirePermission(module: string, action: string) {
   const { error, session } = await requireAuth()
   if (error) return { error, session: null }
 
+  const perms = session!.user.permissions || []
   const hasPermission =
     session!.user.role === 'ADMIN' ||
-    session!.user.permissions.includes(`${module}:${action}`)
+    perms.includes('*') ||
+    perms.includes(`${module}:${action}`)
 
   if (!hasPermission) {
     return { error: NextResponse.json({ error: 'Forbidden' }, { status: 403 }), session: null }

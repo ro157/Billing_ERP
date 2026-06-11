@@ -467,7 +467,11 @@ export default function CustomersPage() {
                           </div>
                           <div className="text-right shrink-0">
                             <p className="font-medium">{formatCurrency(Number(inv.total_amount))}</p>
-                            <p className="text-xs text-muted-foreground capitalize">{inv.status}</p>
+                            {Number(inv.balance_amount) > 0 && (
+                              <p className="text-xs text-muted-foreground">
+                                Due: {formatCurrency(Number(inv.balance_amount))}
+                              </p>
+                            )}
                           </div>
                         </div>
                       ))}

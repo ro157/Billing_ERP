@@ -16,7 +16,15 @@ import { getInitials } from '@/lib/utils'
 
 interface StaffMember {
   id: string; name: string; email: string; status: string; role: string
-  staffRoles?: { role: { name: string } }[]
+  staffRoles?: { role: { id: string; name: string } }[]
+}
+
+function formatApiError(error: unknown): string {
+  if (typeof error === 'string') return error
+  if (Array.isArray(error)) {
+    return error.map((e: { message?: string }) => e.message).filter(Boolean).join(', ') || 'Validation failed'
+  }
+  return 'Something went wrong'
 }
 
 export default function StaffPage() {
@@ -29,9 +37,7 @@ export default function StaffPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<StaffMember | null>(null)
   const [saving, setSaving] = useState(false)
-  const [roles, setRoles] = useState<{ id: string; name: string }[]>([])
-
-  const form = useForm({ defaultValues: { name: '', email: '', password: '', role: 'STAFF', status: 'ACTIVE', roleId: '' } })
+  const form = useForm({ defaultValues: { name: '', email: '', password: '', role: 'STAFF', status: 'ACTIVE' } })
 
   const fetchStaff = useCallback(async () => {
     setLoading(true)
@@ -46,26 +52,51 @@ export default function StaffPage() {
 
   useEffect(() => { fetchStaff() }, [fetchStaff])
 
-  useEffect(() => {
-    fetch('/api/roles').then(r => r.json()).then(data => setRoles(data.roles || data))
-  }, [])
+  const openNew = () => {
+    setEditing(null)
+    form.reset({ name: '', email: '', password: '', role: 'STAFF', status: 'ACTIVE' })
+    setDialogOpen(true)
+  }
 
-  const openNew = () => { setEditing(null); form.reset({ name: '', email: '', password: '', role: 'STAFF', status: 'ACTIVE', roleId: '' }); setDialogOpen(true) }
-  const openEdit = (s: StaffMember) => { setEditing(s); form.reset({ ...s, password: '', roleId: s.staffRoles?.[0]?.role ? (s.staffRoles[0] as any).roleId || '' : '' }); setDialogOpen(true) }
+  const openEdit = (s: StaffMember) => {
+    setEditing(s)
+    form.reset({
+      name: s.name,
+      email: s.email,
+      password: '',
+      role: s.role || 'STAFF',
+      status: s.status || 'ACTIVE',
+    })
+    setDialogOpen(true)
+  }
 
   const onSubmit = async (data: any) => {
     setSaving(true)
     try {
       const url = editing ? `/api/staff/${editing.id}` : '/api/staff'
       const method = editing ? 'PUT' : 'POST'
-      const payload = editing ? { ...data, roleIds: data.roleId ? [data.roleId] : [], password: data.password || undefined } : { ...data, roleIds: data.roleId ? [data.roleId] : [] }
-      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-      if (!res.ok) throw new Error('Failed')
+      const payload: Record<string, unknown> = {
+        name: data.name,
+        email: data.email,
+        role: data.role,
+        status: data.status,
+      }
+      if (data.password?.trim()) payload.password = data.password
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) {
+        const e = await res.json()
+        throw new Error(formatApiError(e.error) || 'Failed')
+      }
       toast({ title: editing ? 'Staff updated' : 'Staff created' })
       setDialogOpen(false)
       fetchStaff()
-    } catch {
-      toast({ title: 'Error', variant: 'destructive' })
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Error'
+      toast({ title: message, variant: 'destructive' })
     } finally {
       setSaving(false)
     }
@@ -117,7 +148,7 @@ export default function StaffPage() {
                 </TableCell>
                 <TableCell>{s.email}</TableCell>
                 <TableCell>
-                  <Badge variant="secondary">{s.staffRoles?.[0]?.role?.name || s.role}</Badge>
+                  <Badge variant="secondary">{s.role}</Badge>
                 </TableCell>
                 <TableCell>
                   <Badge variant={s.status === 'ACTIVE' ? 'default' : 'destructive'}>{s.status}</Badge>
@@ -147,7 +178,10 @@ export default function StaffPage() {
               </div>
               <div className="space-y-2">
                 <Label>Role</Label>
-                <Select defaultValue="STAFF" onValueChange={(v) => form.setValue('role', v)}>
+                <Select
+                  value={form.watch('role') || 'STAFF'}
+                  onValueChange={(v) => form.setValue('role', v)}
+                >
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="ADMIN">Admin</SelectItem>
@@ -156,17 +190,11 @@ export default function StaffPage() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Custom Role</Label>
-                <Select onValueChange={(v) => form.setValue('roleId', v)}>
-                  <SelectTrigger><SelectValue placeholder="Select custom role..." /></SelectTrigger>
-                  <SelectContent>
-                    {roles.map(r => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
                 <Label>Status</Label>
-                <Select defaultValue="ACTIVE" onValueChange={(v) => form.setValue('status', v)}>
+                <Select
+                  value={form.watch('status') || 'ACTIVE'}
+                  onValueChange={(v) => form.setValue('status', v)}
+                >
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="ACTIVE">Active</SelectItem>

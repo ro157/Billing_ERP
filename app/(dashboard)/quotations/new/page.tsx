@@ -40,26 +40,193 @@ interface Customer {
   billing_city?: string | null
   billing_state?: string | null
   billing_pincode?: string | null
+  shipping_address?: string | null
+  shipping_city?: string | null
 }
 
-type CustomerFields = {
+type PartyFields = {
   name: string
   contactPerson: string
   address: string
   mobile: string
   gstin: string
+  pan: string
   city: string
 }
 
 type ItemMeta = { hsnSac: string; productName: string; listOpen: boolean }
 
-const emptyCustomerFields: CustomerFields = {
+const emptyParty: PartyFields = {
   name: '',
   contactPerson: '',
   address: '',
   mobile: '',
   gstin: '',
+  pan: '',
   city: '',
+}
+
+function customerToBuyer(c: Customer): PartyFields {
+  return {
+    name: c.name,
+    contactPerson: c.contact_person || '',
+    address: c.billing_address || '',
+    mobile: c.mobile || c.phone || '',
+    gstin: c.gstin || '',
+    pan: c.pan || '',
+    city: c.billing_city || '',
+  }
+}
+
+function customerToConsignee(c: Customer): PartyFields {
+  return {
+    name: c.name,
+    contactPerson: c.contact_person || '',
+    address: c.shipping_address || c.billing_address || '',
+    mobile: c.mobile || c.phone || '',
+    gstin: c.gstin || '',
+    pan: c.pan || '',
+    city: c.shipping_city || c.billing_city || '',
+  }
+}
+
+interface PartySectionProps {
+  title: string
+  fields: PartyFields
+  onChange: <K extends keyof PartyFields>(key: K, value: PartyFields[K]) => void
+  contactLabel: string
+  mobileLabel: string
+  showCustomerSearch?: boolean
+  customerListOpen?: boolean
+  onCustomerNameChange?: (value: string) => void
+  onCustomerFocus?: () => void
+  filteredCustomers?: Customer[]
+  onSelectCustomer?: (c: Customer) => void
+  customerSearchRef?: React.RefObject<HTMLDivElement>
+  customerError?: string
+}
+
+function PartySection({
+  title,
+  fields,
+  onChange,
+  contactLabel,
+  mobileLabel,
+  showCustomerSearch,
+  customerListOpen,
+  onCustomerNameChange,
+  onCustomerFocus,
+  filteredCustomers,
+  onSelectCustomer,
+  customerSearchRef,
+  customerError,
+}: PartySectionProps) {
+  const inputClass = 'h-9'
+
+  return (
+    <div className="space-y-4">
+      {title ? (
+        <h3 className="text-sm font-semibold text-slate-700 border-b pb-2">{title}</h3>
+      ) : null}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div
+          className="sm:col-span-2 lg:col-span-3 space-y-2 relative"
+          ref={showCustomerSearch ? customerSearchRef : undefined}
+        >
+          <Label>Customer Name *</Label>
+          {showCustomerSearch ? (
+            <>
+              <Input
+                value={fields.name}
+                onChange={(e) => onCustomerNameChange?.(e.target.value)}
+                onFocus={onCustomerFocus}
+                placeholder="Type to search customer..."
+                autoComplete="off"
+                className={inputClass}
+              />
+              {customerListOpen && filteredCustomers && filteredCustomers.length > 0 && (
+                <ul className="absolute z-50 mt-1 max-h-48 w-full overflow-auto rounded-md border bg-popover py-1 text-sm shadow-md">
+                  {filteredCustomers.map((c) => (
+                    <li key={c.id}>
+                      <button
+                        type="button"
+                        className="w-full px-3 py-2 text-left hover:bg-accent"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => onSelectCustomer?.(c)}
+                      >
+                        <span className="font-medium">{c.name}</span>
+                        {c.gstin && (
+                          <span className="ml-2 text-xs text-muted-foreground font-mono">{c.gstin}</span>
+                        )}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {customerError && <p className="text-destructive text-xs">{customerError}</p>}
+            </>
+          ) : (
+            <Input
+              value={fields.name}
+              onChange={(e) => onChange('name', e.target.value)}
+              className={inputClass}
+            />
+          )}
+        </div>
+        <div className="space-y-2">
+          <Label>{contactLabel}</Label>
+          <Input
+            value={fields.contactPerson}
+            onChange={(e) => onChange('contactPerson', e.target.value)}
+            className={inputClass}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>{mobileLabel}</Label>
+          <Input
+            type="tel"
+            value={fields.mobile}
+            onChange={(e) => onChange('mobile', e.target.value)}
+            className={inputClass}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>GSTIN</Label>
+          <Input
+            value={fields.gstin}
+            onChange={(e) => onChange('gstin', e.target.value.toUpperCase())}
+            className={cn(inputClass, 'uppercase font-mono text-sm')}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>PAN</Label>
+          <Input
+            value={fields.pan}
+            onChange={(e) => onChange('pan', e.target.value.toUpperCase())}
+            className={cn(inputClass, 'uppercase font-mono text-sm')}
+            maxLength={10}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>City</Label>
+          <Input
+            value={fields.city}
+            onChange={(e) => onChange('city', e.target.value)}
+            className={inputClass}
+          />
+        </div>
+        <div className="sm:col-span-2 lg:col-span-3 space-y-2">
+          <Label>Address</Label>
+          <Textarea
+            rows={2}
+            value={fields.address}
+            onChange={(e) => onChange('address', e.target.value)}
+            className="min-h-[4rem] resize-none"
+          />
+        </div>
+      </div>
+    </div>
+  )
 }
 
 const readOnlyInputClass = 'h-9 bg-muted/60 cursor-default'
@@ -102,7 +269,9 @@ export default function NewQuotationPage() {
   const [saving, setSaving] = useState(false)
   const [products, setProducts] = useState<Product[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
-  const [customerFields, setCustomerFields] = useState<CustomerFields>(emptyCustomerFields)
+  const [buyerFields, setBuyerFields] = useState<PartyFields>(emptyParty)
+  const [consigneeFields, setConsigneeFields] = useState<PartyFields>(emptyParty)
+  const [sameAsBuyer, setSameAsBuyer] = useState(false)
   const [customerListOpen, setCustomerListOpen] = useState(false)
   const customerSearchRef = useRef<HTMLDivElement>(null)
   const productSearchRefs = useRef<Record<string, HTMLDivElement | null>>({})
@@ -122,10 +291,10 @@ export default function NewQuotationPage() {
   const gstType = watch('gstType')
 
   const filteredCustomers = useMemo(() => {
-    const q = customerFields.name.trim().toLowerCase()
+    const q = buyerFields.name.trim().toLowerCase()
     if (!q) return customers
     return customers.filter((c) => c.name.toLowerCase().includes(q))
-  }, [customers, customerFields.name])
+  }, [customers, buyerFields.name])
 
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
@@ -168,29 +337,36 @@ export default function NewQuotationPage() {
     fetch('/api/customers?limit=200').then((r) => r.json()).then((d) => setCustomers(d.customers || []))
   }, [])
 
-  const applyCustomer = (c: Customer) => {
-    setValue('customerId', c.id, { shouldValidate: true })
-    setCustomerFields({
-      name: c.name,
-      contactPerson: c.contact_person || '',
-      address: c.billing_address || '',
-      mobile: c.phone || c.mobile || '',
-      gstin: c.gstin || '',
-      city: c.billing_city || '',
-    })
-    setCustomerListOpen(false)
-  }
+  const applyCustomer = useCallback(
+    (c: Customer) => {
+      setValue('customerId', c.id, { shouldValidate: true })
+      const buyer = customerToBuyer(c)
+      setBuyerFields(buyer)
+      if (sameAsBuyer) setConsigneeFields(buyer)
+      setCustomerListOpen(false)
+    },
+    [setValue, sameAsBuyer]
+  )
 
-  const handleCustomerNameChange = (value: string) => {
-    setCustomerFields((prev) => ({ ...prev, name: value }))
+  const handleBuyerNameChange = (value: string) => {
+    setBuyerFields((prev) => ({ ...prev, name: value }))
     setCustomerListOpen(true)
     const match = customers.find((c) => c.name === value)
     if (match) applyCustomer(match)
     else setValue('customerId', '')
   }
 
-  const updateCustomerField = <K extends keyof CustomerFields>(key: K, value: CustomerFields[K]) => {
-    setCustomerFields((prev) => ({ ...prev, [key]: value }))
+  const updateBuyerField = <K extends keyof PartyFields>(key: K, value: PartyFields[K]) => {
+    setBuyerFields((prev) => ({ ...prev, [key]: value }))
+  }
+
+  const updateConsigneeField = <K extends keyof PartyFields>(key: K, value: PartyFields[K]) => {
+    setConsigneeFields((prev) => ({ ...prev, [key]: value }))
+  }
+
+  const handleSameAsBuyerChange = (checked: boolean) => {
+    setSameAsBuyer(checked)
+    if (checked) setConsigneeFields(buyerFields)
   }
 
   const getUsedProductIds = (excludeIndex: number) => {
@@ -321,10 +497,17 @@ export default function NewQuotationPage() {
     }
     setSaving(true)
     try {
+      const payload: QuotationInput = {
+        ...data,
+        partyDetails: {
+          buyer: buyerFields,
+          consignee: consigneeFields,
+        },
+      }
       const res = await fetch('/api/quotations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        body: JSON.stringify(payload),
       })
       if (!res.ok) {
         const e = await res.json()
@@ -394,82 +577,43 @@ export default function NewQuotationPage() {
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Customer Details</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2 md:col-span-2 relative" ref={customerSearchRef}>
-                <Label>Customer Name *</Label>
-                <Input
-                  value={customerFields.name}
-                  onChange={(e) => handleCustomerNameChange(e.target.value)}
-                  onFocus={() => setCustomerListOpen(true)}
-                  placeholder="Type to search customer..."
-                  autoComplete="off"
-                  className="h-9"
-                />
-                {customerListOpen && filteredCustomers.length > 0 && (
-                  <ul className="absolute z-50 mt-1 max-h-48 w-full overflow-auto rounded-md border bg-popover py-1 text-sm shadow-md">
-                    {filteredCustomers.map((c) => (
-                      <li key={c.id}>
-                        <button
-                          type="button"
-                          className="w-full px-3 py-2 text-left hover:bg-accent"
-                          onMouseDown={(e) => e.preventDefault()}
-                          onClick={() => applyCustomer(c)}
-                        >
-                          <span className="font-medium">{c.name}</span>
-                          {c.gstin && (
-                            <span className="ml-2 text-xs text-muted-foreground font-mono">{c.gstin}</span>
-                          )}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {errors.customerId && (
-                  <p className="text-destructive text-xs">Please select a customer from the list</p>
-                )}
+          <CardContent className="space-y-6">
+            <PartySection
+              title="Billed to (Buyer)"
+              fields={buyerFields}
+              onChange={updateBuyerField}
+              contactLabel="B. Person"
+              mobileLabel="Mob"
+              showCustomerSearch
+              customerListOpen={customerListOpen}
+              onCustomerNameChange={handleBuyerNameChange}
+              onCustomerFocus={() => setCustomerListOpen(true)}
+              filteredCustomers={filteredCustomers}
+              onSelectCustomer={applyCustomer}
+              customerSearchRef={customerSearchRef}
+              customerError={errors.customerId ? 'Please select a customer from the list' : undefined}
+            />
+
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center gap-3 border-b pb-2">
+                <h3 className="text-sm font-semibold text-slate-700">Shipped to (Consignee)</h3>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={sameAsBuyer}
+                    onChange={(e) => handleSameAsBuyerChange(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 accent-blue-600"
+                  />
+                  <span className="text-muted-foreground">Same as buyer</span>
+                </label>
               </div>
-              <div className="space-y-2">
-                <Label>Contact Person</Label>
-                <Input
-                  className="h-9"
-                  value={customerFields.contactPerson}
-                  onChange={(e) => updateCustomerField('contactPerson', e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Mobile</Label>
-                <Input
-                  className="h-9"
-                  value={customerFields.mobile}
-                  onChange={(e) => updateCustomerField('mobile', e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>GSTIN</Label>
-                <Input
-                  className="h-9 uppercase font-mono text-sm"
-                  value={customerFields.gstin}
-                  onChange={(e) => updateCustomerField('gstin', e.target.value.toUpperCase())}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>City</Label>
-                <Input
-                  className="h-9"
-                  value={customerFields.city}
-                  onChange={(e) => updateCustomerField('city', e.target.value)}
-                />
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label>Address</Label>
-                <Textarea
-                  rows={2}
-                  className="min-h-[4rem] resize-none"
-                  value={customerFields.address}
-                  onChange={(e) => updateCustomerField('address', e.target.value)}
-                />
-              </div>
+              <PartySection
+                title=""
+                fields={consigneeFields}
+                onChange={updateConsigneeField}
+                contactLabel="S. Person"
+                mobileLabel="Mobile"
+              />
             </div>
           </CardContent>
         </Card>

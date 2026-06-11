@@ -4,10 +4,8 @@ import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
 import { Plus, Search, Eye, Edit, Trash2, LayoutGrid, Table2, FileText } from 'lucide-react'
 import { formatCurrency, formatDate } from '@/lib/utils'
@@ -19,16 +17,6 @@ interface Quotation {
   valid_until?: string
   customer_name: string
   total_amount: number
-  status: string
-}
-
-const STATUS_COLORS: Record<string, string> = {
-  DRAFT: 'secondary',
-  SENT: 'default',
-  ACCEPTED: 'default',
-  REJECTED: 'destructive',
-  CONVERTED: 'secondary',
-  EXPIRED: 'outline',
 }
 
 function QuotationActions({
@@ -67,21 +55,12 @@ function QuotationActions({
   )
 }
 
-function StatusBadge({ status }: { status: string }) {
-  return (
-    <Badge variant={STATUS_COLORS[status] as 'secondary' | 'default' | 'destructive' | 'outline' || 'secondary'}>
-      {status}
-    </Badge>
-  )
-}
-
 export default function QuotationsPage() {
   const { toast } = useToast()
   const [quotations, setQuotations] = useState<Quotation[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [status, setStatus] = useState('')
   const [page, setPage] = useState(1)
   const [viewMode, setViewMode] = useState<'table' | 'card'>('table')
   const [isMobile, setIsMobile] = useState(false)
@@ -102,15 +81,18 @@ export default function QuotationsPage() {
     try {
       const params = new URLSearchParams({ page: String(page), limit: '20' })
       if (search) params.set('search', search)
-      if (status) params.set('status', status)
       const res = await fetch(`/api/quotations?${params}`)
       const data = await res.json()
+      if (!res.ok) {
+        toast({ title: data.error || 'Failed to load quotations', variant: 'destructive' })
+        return
+      }
       setQuotations(data.quotations || [])
-      setTotal(data.total || 0)
+      setTotal(Number(data.total) || 0)
     } finally {
       setLoading(false)
     }
-  }, [search, status, page])
+  }, [search, page, toast])
 
   useEffect(() => { fetchQuotations() }, [fetchQuotations])
 
@@ -168,18 +150,6 @@ export default function QuotationsPage() {
             onChange={(e) => { setSearch(e.target.value); setPage(1) }}
           />
         </div>
-        <Select value={status} onValueChange={(v) => { setStatus(v === 'ALL' ? '' : v); setPage(1) }}>
-          <SelectTrigger className="w-full sm:w-36 h-9">
-            <SelectValue placeholder="All Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="ALL">All</SelectItem>
-            <SelectItem value="DRAFT">Draft</SelectItem>
-            <SelectItem value="SENT">Sent</SelectItem>
-            <SelectItem value="ACCEPTED">Accepted</SelectItem>
-            <SelectItem value="CONVERTED">Converted</SelectItem>
-          </SelectContent>
-        </Select>
         <div className="hidden md:flex items-center gap-1 rounded-md border bg-background p-1 shrink-0">
           <Button
             variant={viewMode === 'table' ? 'secondary' : 'outline'}
@@ -212,20 +182,19 @@ export default function QuotationsPage() {
                 <TableHead>Date</TableHead>
                 <TableHead>Valid Until</TableHead>
                 <TableHead className="text-right">Amount</TableHead>
-                <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
+                  <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">
                     Loading...
                   </TableCell>
                 </TableRow>
               ) : quotations.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
+                  <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">
                     No quotations found
                   </TableCell>
                 </TableRow>
@@ -237,7 +206,6 @@ export default function QuotationsPage() {
                     <TableCell>{formatDate(q.date)}</TableCell>
                     <TableCell>{q.valid_until ? formatDate(q.valid_until) : '-'}</TableCell>
                     <TableCell className="text-right font-medium">{formatCurrency(q.total_amount)}</TableCell>
-                    <TableCell><StatusBadge status={q.status} /></TableCell>
                     <TableCell className="text-right">
                       <QuotationActions id={q.id} onDelete={() => handleDelete(q.id, q.quotation_no)} />
                     </TableCell>
@@ -299,13 +267,6 @@ export default function QuotationsPage() {
                           <span className="font-semibold text-sm text-primary">{formatCurrency(q.total_amount)}</span>
                         </div>
                       </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 border-t bg-muted/40 px-3 py-2.5 rounded-b-xl">
-                      <span className="text-xs text-muted-foreground shrink-0">Status</span>
-                      <span className="ml-auto">
-                        <StatusBadge status={q.status} />
-                      </span>
                     </div>
                   </CardContent>
                 </Card>

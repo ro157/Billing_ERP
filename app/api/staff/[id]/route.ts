@@ -35,9 +35,20 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       }
     }
 
+    if (data.email) {
+      const [emailInUse] = await db.execute(
+        'SELECT id FROM users WHERE email = ? AND id != ?',
+        [data.email, params.id]
+      ) as any[]
+      if (emailInUse[0]) {
+        return NextResponse.json({ error: 'Email already in use' }, { status: 400 })
+      }
+    }
+
     const updates: string[] = []
     const values: any[] = []
     if (data.name) { updates.push('name = ?'); values.push(data.name) }
+    if (data.email) { updates.push('email = ?'); values.push(data.email) }
     if (data.mobile !== undefined) { updates.push('mobile = ?'); values.push(data.mobile || null) }
     if (data.role) { updates.push('role = ?'); values.push(data.role) }
     if (data.branch !== undefined) { updates.push('branch = ?'); values.push(data.branch || null) }
@@ -53,7 +64,10 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     ) as any[]
     return NextResponse.json(rows[0])
   } catch (err: any) {
-    if (err.name === 'ZodError') return NextResponse.json({ error: err.errors }, { status: 400 })
+    if (err.name === 'ZodError') {
+      const message = err.errors?.map((e: { message?: string }) => e.message).filter(Boolean).join(', ') || 'Validation failed'
+      return NextResponse.json({ error: message }, { status: 400 })
+    }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

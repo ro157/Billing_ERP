@@ -1,74 +1,177 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
+import Link from 'next/link'
 import {
-  AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts'
 import {
-  TrendingUp, TrendingDown, Users, ShoppingCart, FileText, Package,
-  AlertTriangle, Clock, IndianRupee
+  TrendingUp, ShoppingCart, FileText, AlertTriangle
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { formatCurrency } from '@/lib/utils'
+
+interface ChartRow {
+  period: string
+  total: number
+  count: number
+}
 
 interface DashboardStats {
   salesToday: { amount: number; count: number }
   purchasesToday: { amount: number; count: number }
-  customerDues: { amount: number; count: number }
-  vendorDues: { amount: number; count: number }
   pendingQuotations: number
-  openPOs: number
   lowStockCount: number
-  monthlySales: { month: string; total: number; count: number }[]
-  monthlyPurchases: { month: string; total: number; count: number }[]
-  gstSummary: { cgst: number; sgst: number; igst: number; total: number }
+  chartType: 'monthly' | 'daily'
+  chartYear: number
+  chartMonth: string | null
+  chartSales: ChartRow[]
+  chartPurchases: ChartRow[]
 }
 
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+]
+
 function StatCard({
-  title, value, sub, icon: Icon, color, badge,
+  title, value, sub, icon: Icon, color, badge, href,
 }: {
-  title: string; value: string; sub?: string; icon: any; color: string; badge?: string
+  title: string; value: string; sub?: string; icon: any; color: string; badge?: string; href: string
 }) {
   return (
-    <Card>
-      <CardContent className="p-5">
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="text-sm text-muted-foreground">{title}</p>
-            <p className="text-2xl font-bold mt-1">{value}</p>
-            {sub && <p className="text-xs text-muted-foreground mt-1">{sub}</p>}
+    <Link href={href} className="block group">
+      <Card className="transition-shadow hover:shadow-md cursor-pointer h-full">
+        <CardContent className="p-5">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">{title}</p>
+              <p className="text-2xl font-bold mt-1">{value}</p>
+              {sub && <p className="text-xs text-muted-foreground mt-1">{sub}</p>}
+            </div>
+            <div className={`p-2 rounded-lg ${color}`}>
+              <Icon className="w-5 h-5 text-white" />
+            </div>
           </div>
-          <div className={`p-2 rounded-lg ${color}`}>
-            <Icon className="w-5 h-5 text-white" />
-          </div>
-        </div>
-        {badge && (
-          <Badge variant="secondary" className="mt-3 text-xs">{badge}</Badge>
-        )}
-      </CardContent>
-    </Card>
+          {badge && (
+            <Badge variant="secondary" className="mt-3 text-xs">{badge}</Badge>
+          )}
+        </CardContent>
+      </Card>
+    </Link>
   )
 }
 
-function formatMonth(month: string) {
-  const [year, m] = month.split('-')
-  const date = new Date(Number(year), Number(m) - 1)
-  return date.toLocaleString('default', { month: 'short' })
+function formatMonthLabel(period: string) {
+  const [y, m] = period.split('-')
+  const date = new Date(Number(y), Number(m) - 1)
+  return date.toLocaleString('default', { month: 'short', year: '2-digit' })
+}
+
+function formatDayLabel(period: string) {
+  const d = new Date(period + 'T00:00:00')
+  return d.toLocaleString('default', { day: 'numeric', month: 'short' })
+}
+
+function getYearMonthKeys(year: number): string[] {
+  const keys: string[] = []
+  const limit = year === new Date().getFullYear() ? new Date().getMonth() + 1 : 12
+  for (let m = 1; m <= limit; m++) {
+    keys.push(`${year}-${String(m).padStart(2, '0')}`)
+  }
+  return keys
+}
+
+function getDaysInMonth(year: number, month: number): string[] {
+  const days = new Date(year, month, 0).getDate()
+  const keys: string[] = []
+  const m = String(month).padStart(2, '0')
+  for (let d = 1; d <= days; d++) {
+    keys.push(`${year}-${m}-${String(d).padStart(2, '0')}`)
+  }
+  return keys
+}
+
+function buildChartData(
+  chartType: 'monthly' | 'daily',
+  year: number,
+  month: string | null,
+  chartSales: ChartRow[],
+  chartPurchases: ChartRow[]
+) {
+  const salesMap = Object.fromEntries(
+    chartSales.map((s) => [s.period, { total: Number(s.total), count: Number(s.count) }])
+  )
+  const purchasesMap = Object.fromEntries(
+    chartPurchases.map((p) => [p.period, { total: Number(p.total), count: Number(p.count) }])
+  )
+
+  if (chartType === 'daily' && month) {
+    const monthNum = parseInt(month, 10)
+    return getDaysInMonth(year, monthNum).map((key) => ({
+      key,
+      label: formatDayLabel(key),
+      sales: salesMap[key]?.total ?? 0,
+      purchases: purchasesMap[key]?.total ?? 0,
+      salesCount: salesMap[key]?.count ?? 0,
+      purchasesCount: purchasesMap[key]?.count ?? 0,
+    }))
+  }
+
+  return getYearMonthKeys(year).map((key) => ({
+    key,
+    label: formatMonthLabel(key),
+    sales: salesMap[key]?.total ?? 0,
+    purchases: purchasesMap[key]?.total ?? 0,
+    salesCount: salesMap[key]?.count ?? 0,
+    purchasesCount: purchasesMap[key]?.count ?? 0,
+  }))
+}
+
+function getYearOptions() {
+  const current = new Date().getFullYear()
+  const years: number[] = []
+  for (let y = current; y >= current - 5; y--) years.push(y)
+  return years
 }
 
 export default function DashboardPage() {
+  const currentYear = new Date().getFullYear()
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
+  const [chartLoading, setChartLoading] = useState(false)
+  const [year, setYear] = useState(String(currentYear))
+  const [month, setMonth] = useState('ALL')
 
-  useEffect(() => {
-    fetch('/api/dashboard')
-      .then((r) => r.json())
-      .then((data) => setStats(data))
-      .finally(() => setLoading(false))
+  const isFirstLoad = useRef(true)
+
+  const fetchDashboard = useCallback(async (selectedYear: string, selectedMonth: string) => {
+    if (isFirstLoad.current) setLoading(true)
+    else setChartLoading(true)
+    try {
+      const params = new URLSearchParams({ year: selectedYear })
+      if (selectedMonth !== 'ALL') params.set('month', selectedMonth)
+      const res = await fetch(`/api/dashboard?${params}`)
+      const data = await res.json()
+      setStats(data)
+    } finally {
+      if (isFirstLoad.current) {
+        setLoading(false)
+        isFirstLoad.current = false
+      } else {
+        setChartLoading(false)
+      }
+    }
   }, [])
 
-  if (loading) {
+  useEffect(() => {
+    fetchDashboard(year, month)
+  }, [year, month, fetchDashboard])
+
+  if (loading || !stats) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
@@ -76,20 +179,41 @@ export default function DashboardPage() {
     )
   }
 
-  if (!stats) return null
+  const chartData = buildChartData(
+    stats.chartType,
+    stats.chartYear,
+    stats.chartMonth,
+    stats.chartSales,
+    stats.chartPurchases
+  )
 
-  const chartData = (() => {
-    const months: Record<string, { month: string; sales: number; purchases: number }> = {}
-    stats.monthlySales.forEach((s) => {
-      if (!months[s.month]) months[s.month] = { month: formatMonth(s.month), sales: 0, purchases: 0 }
-      months[s.month].sales = Number(s.total)
-    })
-    stats.monthlyPurchases.forEach((p) => {
-      if (!months[p.month]) months[p.month] = { month: formatMonth(p.month), sales: 0, purchases: 0 }
-      months[p.month].purchases = Number(p.total)
-    })
-    return Object.values(months).slice(-6)
-  })()
+  const periodLabel =
+    month !== 'ALL'
+      ? `${MONTH_NAMES[parseInt(month, 10) - 1]} ${year}`
+      : `Year ${year}`
+
+  const xLabel = stats.chartType === 'daily' ? 'Day' : 'Month'
+  const isMonthView = month !== 'ALL'
+
+  const monthTotals = isMonthView
+    ? chartData.reduce(
+        (acc, row) => ({
+          sales: acc.sales + row.sales,
+          purchases: acc.purchases + row.purchases,
+          salesCount: acc.salesCount + row.salesCount,
+          purchasesCount: acc.purchasesCount + row.purchasesCount,
+        }),
+        { sales: 0, purchases: 0, salesCount: 0, purchasesCount: 0 }
+      )
+    : null
+
+  const handleChartClick = (state: { activePayload?: { payload?: { key?: string } }[] }) => {
+    if (month !== 'ALL' || stats.chartType !== 'monthly') return
+    const key = state?.activePayload?.[0]?.payload?.key
+    if (!key) return
+    const monthPart = key.split('-')[1]
+    if (monthPart) setMonth(monthPart)
+  }
 
   return (
     <div className="space-y-4 md:space-y-6 min-w-0">
@@ -98,7 +222,6 @@ export default function DashboardPage() {
         <p className="text-sm text-muted-foreground">Business overview for today</p>
       </div>
 
-      {/* Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         <StatCard
           title="Sales Today"
@@ -106,6 +229,7 @@ export default function DashboardPage() {
           sub={`${stats.salesToday.count} invoice(s)`}
           icon={TrendingUp}
           color="bg-blue-500"
+          href="/billing"
         />
         <StatCard
           title="Purchases Today"
@@ -113,63 +237,92 @@ export default function DashboardPage() {
           sub={`${stats.purchasesToday.count} bill(s)`}
           icon={ShoppingCart}
           color="bg-purple-500"
+          href="/purchases"
         />
-        <StatCard
-          title="Customer Dues"
-          value={formatCurrency(stats.customerDues.amount)}
-          sub={`${stats.customerDues.count} pending`}
-          icon={IndianRupee}
-          color="bg-orange-500"
-          badge="Receivable"
-        />
-        <StatCard
-          title="Vendor Dues"
-          value={formatCurrency(stats.vendorDues.amount)}
-          sub={`${stats.vendorDues.count} pending`}
-          icon={TrendingDown}
-          color="bg-red-500"
-          badge="Payable"
-        />
-      </div>
-
-      {/* Secondary Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         <StatCard
           title="Pending Quotations"
           value={String(stats.pendingQuotations)}
           icon={FileText}
           color="bg-teal-500"
-        />
-        <StatCard
-          title="Open Purchase Orders"
-          value={String(stats.openPOs)}
-          icon={Clock}
-          color="bg-indigo-500"
+          href="/quotations"
         />
         <StatCard
           title="Low Stock Items"
           value={String(stats.lowStockCount)}
           icon={AlertTriangle}
           color="bg-yellow-500"
-        />
-        <StatCard
-          title="GST Payable (Month)"
-          value={formatCurrency(stats.gstSummary.total)}
-          sub={`CGST: ${formatCurrency(stats.gstSummary.cgst)} | SGST: ${formatCurrency(stats.gstSummary.sgst)}`}
-          icon={Package}
-          color="bg-green-500"
+          href="/inventory"
         />
       </div>
 
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+      <div className="relative">
+        {chartLoading && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/60 rounded-lg">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+          </div>
+        )}
+
         <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Sales vs Purchases (Last 6 Months)</CardTitle>
+          <CardHeader className="space-y-4 pb-2">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <CardTitle className="text-base">
+                Sales vs Purchases ({periodLabel})
+              </CardTitle>
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Year</Label>
+                  <Select value={year} onValueChange={setYear}>
+                    <SelectTrigger className="h-9 w-[100px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {getYearOptions().map((y) => (
+                        <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Month</Label>
+                  <Select value={month} onValueChange={setMonth}>
+                    <SelectTrigger className="h-9 w-[140px]">
+                      <SelectValue placeholder="Select month" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALL">All Months</SelectItem>
+                      {MONTH_NAMES.map((name, i) => (
+                        <SelectItem key={name} value={String(i + 1).padStart(2, '0')}>
+                          {name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+            {isMonthView && monthTotals && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+                <div className="rounded-lg border bg-blue-50/50 px-3 py-2">
+                  <p className="text-xs text-muted-foreground">Sales</p>
+                  <p className="font-semibold text-blue-700">{formatCurrency(monthTotals.sales)}</p>
+                  <p className="text-xs text-muted-foreground">{monthTotals.salesCount} invoice(s)</p>
+                </div>
+                <div className="rounded-lg border bg-purple-50/50 px-3 py-2">
+                  <p className="text-xs text-muted-foreground">Purchases</p>
+                  <p className="font-semibold text-purple-700">{formatCurrency(monthTotals.purchases)}</p>
+                  <p className="text-xs text-muted-foreground">{monthTotals.purchasesCount} bill(s)</p>
+                </div>
+              </div>
+            )}
+            {!isMonthView && (
+              <p className="text-xs text-muted-foreground">
+                Select a month from the dropdown, or click a month on the chart for day-wise data.
+              </p>
+            )}
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={220}>
-              <AreaChart data={chartData}>
+            <ResponsiveContainer width="100%" height={280}>
+              <AreaChart data={chartData} onClick={handleChartClick} style={{ cursor: month === 'ALL' ? 'pointer' : 'default' }}>
                 <defs>
                   <linearGradient id="sales" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
@@ -181,32 +334,26 @@ export default function DashboardPage() {
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis dataKey="month" tick={{ fontSize: 12 }} />
+                <XAxis
+                  dataKey="label"
+                  tick={{ fontSize: 10 }}
+                  interval={stats.chartType === 'daily' ? 2 : 0}
+                  angle={stats.chartType === 'daily' ? -45 : -20}
+                  textAnchor="end"
+                  height={55}
+                />
                 <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} />
-                <Tooltip formatter={(v: number) => formatCurrency(v)} />
+                <Tooltip
+                  formatter={(v: number, name: string, item: { payload?: { salesCount?: number; purchasesCount?: number } }) => {
+                    const count = name === 'Sales' ? item.payload?.salesCount : item.payload?.purchasesCount
+                    return [`${formatCurrency(v)}${count != null ? ` (${count} txn)` : ''}`, name]
+                  }}
+                  labelFormatter={(label) => `${xLabel}: ${label}`}
+                />
                 <Legend />
                 <Area type="monotone" dataKey="sales" name="Sales" stroke="#3b82f6" fill="url(#sales)" />
                 <Area type="monotone" dataKey="purchases" name="Purchases" stroke="#a855f7" fill="url(#purchases)" />
               </AreaChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Monthly Transaction Volume</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis dataKey="month" tick={{ fontSize: 12 }} />
-                <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} />
-                <Tooltip formatter={(v: number) => formatCurrency(v)} />
-                <Legend />
-                <Bar dataKey="sales" name="Sales" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="purchases" name="Purchases" fill="#a855f7" radius={[4, 4, 0, 0]} />
-              </BarChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>

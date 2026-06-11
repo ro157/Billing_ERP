@@ -2,16 +2,20 @@ import { NextRequest, NextResponse } from 'next/server'
 import db from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { invoiceSchema } from '@/lib/validations'
+import { ensureInvoiceSchema } from '@/lib/ensure-invoice-schema'
+import { calculateGST, roundToNearestRupee, roundToTwo } from '@/lib/utils'
 import { randomUUID } from 'crypto'
 
 function computeItemTotals(item: any, gstType: string) {
-  const taxable = item.quantity * item.rate * (1 - (item.discount || 0) / 100)
-  let cgst = 0, sgst = 0, igst = 0
-  if (gstType === 'CGST_SGST') { cgst = taxable * item.gstRate / 200; sgst = cgst }
-  else if (gstType === 'IGST') { igst = taxable * item.gstRate / 100 }
-  const total = taxable + cgst + sgst + igst
-  const discAmt = item.quantity * item.rate - taxable
-  return { taxable, cgst, sgst, igst, total, discAmt }
+  // UI uses flat ₹ discount applied after GST on the line total
+  const taxable = roundToTwo((Number(item.quantity) || 0) * (Number(item.rate) || 0))
+  const gst = calculateGST(taxable, Number(item.gstRate) || 0, (gstType as any) || 'CGST_SGST')
+  const totalWithGst = roundToTwo(taxable + gst.total)
+  const discAmt = roundToTwo(
+    Math.min(Math.max(0, Number(item.discount) || 0), totalWithGst)
+  )
+  const total = roundToTwo(totalWithGst - discAmt)
+  return { taxable, cgst: gst.cgst, sgst: gst.sgst, igst: gst.igst, total, discAmt }
 }
 
 export async function GET(req: NextRequest) {
@@ -20,7 +24,8 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url)
   const search = searchParams.get('search') || ''
-  const status = searchParams.get('status')
+  const company = searchParams.get('company') || ''
+  const invoiceNo = searchParams.get('invoiceNo') || ''
   const customerId = searchParams.get('customerId')
   const fromDate = searchParams.get('fromDate')
   const toDate = searchParams.get('toDate')
@@ -31,7 +36,8 @@ export async function GET(req: NextRequest) {
   const conditions: string[] = []
   const params: any[] = []
   if (search) { conditions.push('(i.invoice_no LIKE ? OR c.name LIKE ?)'); const s = `%${search}%`; params.push(s, s) }
-  if (status) { conditions.push('i.status = ?'); params.push(status) }
+  if (company) { conditions.push('c.name LIKE ?'); params.push(`%${company}%`) }
+  if (invoiceNo) { conditions.push('i.invoice_no LIKE ?'); params.push(`%${invoiceNo}%`) }
   if (customerId) { conditions.push('i.customer_id = ?'); params.push(customerId) }
   if (fromDate) { conditions.push('i.date >= ?'); params.push(fromDate) }
   if (toDate) { conditions.push('i.date <= ?'); params.push(toDate) }
@@ -55,6 +61,7 @@ export async function POST(req: NextRequest) {
 
   const conn = await db.getConnection()
   try {
+    await ensureInvoiceSchema()
     const body = await req.json()
     const data = invoiceSchema.parse(body)
     const gstType = data.gstType
@@ -70,28 +77,33 @@ export async function POST(req: NextRequest) {
     if (lastInv[0]) { const m = lastInv[0].invoice_no.match(/\d+$/); if (m) nextNum = parseInt(m[0]) + 1 }
     const invoiceNo = `${prefix}${String(nextNum).padStart(4, '0')}`
 
-    // Compute totals
-    let subtotal = 0, totalDiscount = 0, totalTaxable = 0, totalCgst = 0, totalSgst = 0, totalIgst = 0, grandTotal = 0
+    // Compute totals (match UI)
+    let subtotal = 0, totalDiscount = 0, totalCgst = 0, totalSgst = 0, totalIgst = 0, grandTotal = 0
     const itemsWithTotals = data.items.map((item: any) => {
-      const gross = item.quantity * item.rate
       const t = computeItemTotals(item, gstType)
-      subtotal += gross; totalDiscount += t.discAmt; totalTaxable += t.taxable
-      totalCgst += t.cgst; totalSgst += t.sgst; totalIgst += t.igst; grandTotal += t.total
+      subtotal += t.taxable
+      totalDiscount += t.discAmt
+      totalCgst += t.cgst
+      totalSgst += t.sgst
+      totalIgst += t.igst
+      grandTotal += t.total
       return { ...item, ...t }
     })
+    const taxAmount = roundToTwo(totalCgst + totalSgst + totalIgst)
+    const totalAmount = roundToNearestRupee(roundToTwo(grandTotal))
 
     const id = randomUUID()
+    const partyDetailsJson = data.partyDetails ? JSON.stringify(data.partyDetails) : null
     await conn.execute(
       `INSERT INTO invoices (id, invoice_no, customer_id, date, due_date, gst_type, place_of_supply,
         subtotal, discount_amount, cgst_amount, sgst_amount, igst_amount, tax_amount, total_amount,
-        paid_amount, balance_amount, payment_mode, notes, terms, status)
+        paid_amount, balance_amount, payment_mode, notes, terms, party_details)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [id, invoiceNo, data.customerId, data.date, data.dueDate || null,
        gstType, data.placeOfSupply || null,
-       subtotal, totalDiscount, totalCgst, totalSgst, totalIgst, totalCgst + totalSgst + totalIgst, grandTotal,
-       data.paidAmount, grandTotal - data.paidAmount,
-       data.paymentMode || null, data.notes || null, data.terms || null,
-       grandTotal - data.paidAmount <= 0 ? 'PAID' : data.paidAmount > 0 ? 'PARTIAL' : 'DRAFT']
+       roundToTwo(subtotal), roundToTwo(totalDiscount), roundToTwo(totalCgst), roundToTwo(totalSgst), roundToTwo(totalIgst), taxAmount, totalAmount,
+       data.paidAmount, roundToTwo(totalAmount - data.paidAmount),
+       data.paymentMode || null, data.notes || null, data.terms || null, partyDetailsJson]
     )
 
     for (const item of itemsWithTotals) {

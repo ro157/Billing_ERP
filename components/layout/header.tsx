@@ -65,7 +65,7 @@ export function Header() {
               </div>
               <div className="p-1">
                 <Link
-                  href="/settings/profile"
+                  href="/profile"
                   className="flex items-center gap-2 rounded px-3 py-2 text-sm hover:bg-slate-100"
                   onClick={() => setDropdownOpen(false)}
                 >

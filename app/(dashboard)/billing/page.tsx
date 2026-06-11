@@ -4,13 +4,11 @@ import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
 import { Label } from '@/components/ui/label'
-import { Plus, Eye, Edit, Trash2, LayoutGrid, Table2, FileText } from 'lucide-react'
+import { Plus, Eye, Edit, Trash2, LayoutGrid, Table2, FileText, Calendar, Search } from 'lucide-react'
 import { formatCurrency, formatDate } from '@/lib/utils'
 
 interface Invoice {
@@ -20,24 +18,6 @@ interface Invoice {
   due_date?: string
   customer_name: string
   total_amount: number
-  status: string
-}
-
-const STATUS_COLORS: Record<string, string> = {
-  DRAFT: 'secondary',
-  SENT: 'default',
-  PARTIAL: 'outline',
-  PAID: 'default',
-  OVERDUE: 'destructive',
-  CANCELLED: 'secondary',
-}
-
-function StatusBadge({ status }: { status: string }) {
-  return (
-    <Badge variant={STATUS_COLORS[status] as 'secondary' | 'default' | 'destructive' | 'outline' || 'secondary'}>
-      {status}
-    </Badge>
-  )
 }
 
 function InvoiceActions({
@@ -58,7 +38,7 @@ function InvoiceActions({
           <Eye className={icon} />
         </Button>
       </Link>
-      <Link href={`/billing/${id}`}>
+      <Link href={`/billing/${id}/edit`}>
         <Button variant="ghost" size="icon" title="Edit" className={size}>
           <Edit className={icon} />
         </Button>
@@ -81,7 +61,7 @@ export default function BillingPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
-  const [status, setStatus] = useState('')
+  const [search, setSearch] = useState('')
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
   const [page, setPage] = useState(1)
@@ -103,7 +83,7 @@ export default function BillingPage() {
     setLoading(true)
     try {
       const params = new URLSearchParams({ page: String(page), limit: '20' })
-      if (status) params.set('status', status)
+      if (search.trim()) params.set('search', search.trim())
       if (fromDate) params.set('fromDate', fromDate)
       if (toDate) params.set('toDate', toDate)
       const res = await fetch(`/api/invoices?${params}`)
@@ -113,7 +93,7 @@ export default function BillingPage() {
     } finally {
       setLoading(false)
     }
-  }, [status, fromDate, toDate, page])
+  }, [search, fromDate, toDate, page])
 
   useEffect(() => { fetchInvoices() }, [fetchInvoices])
 
@@ -148,12 +128,12 @@ export default function BillingPage() {
 
   return (
     <div className="space-y-4 md:space-y-6 min-w-0">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold">Sales Invoices</h1>
-          <p className="text-sm sm:text-base text-muted-foreground">{total} invoice(s)</p>
+      <div className="grid grid-cols-2 gap-3 sm:flex sm:items-center sm:justify-between">
+        <div className="col-span-2 sm:col-span-1 min-w-0">
+          <h1 className="text-lg sm:text-2xl font-bold truncate">Sales Invoices</h1>
+          <p className="text-xs sm:text-base text-muted-foreground">{total} invoice(s)</p>
         </div>
-        <Link href="/billing/new" className="w-full sm:w-auto">
+        <Link href="/billing/new" className="col-span-2 sm:col-span-1 sm:ml-auto">
           <Button className="h-9 w-full sm:w-auto">
             <Plus className="w-4 h-4 shrink-0 mr-1.5" />
             <span className="text-sm">New Invoice</span>
@@ -162,73 +142,83 @@ export default function BillingPage() {
       </div>
 
       <Card>
-        <CardContent className="p-4 space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="space-y-2">
+        <CardContent className="p-3 sm:p-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
+            <div className="col-span-2 md:col-span-3 lg:col-span-2 space-y-1.5 min-w-0">
+              <Label className="text-xs text-muted-foreground">Search</Label>
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                <Input
+                  placeholder="Company or invoice no..."
+                  className="h-9 pl-9 min-w-0"
+                  value={search}
+                  onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5 min-w-0">
               <Label className="text-xs text-muted-foreground">From Date</Label>
-              <Input
-                type="date"
-                className="h-9"
-                value={fromDate}
-                onChange={(e) => { setFromDate(e.target.value); setPage(1) }}
-              />
+              <div className="relative">
+                <Input
+                  type="date"
+                  className="h-9 w-full min-w-0 pr-9 text-sm [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:right-0 [&::-webkit-calendar-picker-indicator]:w-9 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:cursor-pointer"
+                  value={fromDate}
+                  onChange={(e) => { setFromDate(e.target.value); setPage(1) }}
+                />
+                <Calendar className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+              </div>
             </div>
-            <div className="space-y-2">
+
+            <div className="space-y-1.5 min-w-0">
               <Label className="text-xs text-muted-foreground">To Date</Label>
-              <Input
-                type="date"
-                className="h-9"
-                min={fromDate || undefined}
-                value={toDate}
-                onChange={(e) => { setToDate(e.target.value); setPage(1) }}
-              />
+              <div className="relative">
+                <Input
+                  type="date"
+                  className="h-9 w-full min-w-0 pr-9 text-sm [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:right-0 [&::-webkit-calendar-picker-indicator]:w-9 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:cursor-pointer"
+                  min={fromDate || undefined}
+                  value={toDate}
+                  onChange={(e) => { setToDate(e.target.value); setPage(1) }}
+                />
+                <Calendar className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Status</Label>
-              <Select value={status || 'ALL'} onValueChange={(v) => { setStatus(v === 'ALL' ? '' : v); setPage(1) }}>
-                <SelectTrigger className="h-9"><SelectValue placeholder="All Status" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">All Status</SelectItem>
-                  <SelectItem value="DRAFT">Draft</SelectItem>
-                  <SelectItem value="SENT">Sent</SelectItem>
-                  <SelectItem value="PARTIAL">Partial</SelectItem>
-                  <SelectItem value="PAID">Paid</SelectItem>
-                  <SelectItem value="OVERDUE">Overdue</SelectItem>
-                  <SelectItem value="CANCELLED">Cancelled</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-end">
+
+            <div className="col-span-1 md:col-span-3 lg:col-span-1 flex items-end gap-2 min-w-0">
               <Button
                 type="button"
                 variant="outline"
-                className="h-9 w-full"
-                onClick={() => { setFromDate(''); setToDate(''); setStatus(''); setPage(1) }}
+                className="h-9 w-full min-w-0 px-2 sm:px-4"
+                onClick={() => {
+                  setSearch('')
+                  setFromDate('')
+                  setToDate('')
+                  setPage(1)
+                }}
               >
-                Clear Filters
+                Clear
               </Button>
+              <div className="hidden md:flex items-center gap-1 rounded-md border bg-background p-1 shrink-0">
+                <Button
+                  variant={viewMode === 'table' ? 'secondary' : 'outline'}
+                  size="icon"
+                  className="h-8 w-8"
+                  title="Table view"
+                  onClick={() => setViewMode('table')}
+                >
+                  <Table2 className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant={viewMode === 'card' ? 'secondary' : 'outline'}
+                  size="icon"
+                  className="h-8 w-8"
+                  title="Card view"
+                  onClick={() => setViewMode('card')}
+                >
+                  <LayoutGrid className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
-          </div>
-
-          <div className="hidden md:flex items-center justify-end gap-1 rounded-md border bg-background p-1 w-fit ml-auto">
-            <Button
-              variant={viewMode === 'table' ? 'secondary' : 'outline'}
-              size="icon"
-              className="h-8 w-8"
-              title="Table view"
-              onClick={() => setViewMode('table')}
-            >
-              <Table2 className="h-4 w-4" />
-            </Button>
-            <Button
-              variant={viewMode === 'card' ? 'secondary' : 'outline'}
-              size="icon"
-              className="h-8 w-8"
-              title="Card view"
-              onClick={() => setViewMode('card')}
-            >
-              <LayoutGrid className="h-4 w-4" />
-            </Button>
           </div>
         </CardContent>
       </Card>
@@ -243,20 +233,19 @@ export default function BillingPage() {
                 <TableHead>Date</TableHead>
                 <TableHead>Due Date</TableHead>
                 <TableHead className="text-right">Amount</TableHead>
-                <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
+                  <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">
                     Loading...
                   </TableCell>
                 </TableRow>
               ) : invoices.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
+                  <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">
                     No invoices found
                   </TableCell>
                 </TableRow>
@@ -268,7 +257,6 @@ export default function BillingPage() {
                     <TableCell>{formatDate(inv.date)}</TableCell>
                     <TableCell>{inv.due_date ? formatDate(inv.due_date) : '-'}</TableCell>
                     <TableCell className="text-right font-medium">{formatCurrency(inv.total_amount)}</TableCell>
-                    <TableCell><StatusBadge status={inv.status} /></TableCell>
                     <TableCell className="text-right">
                       <InvoiceActions id={inv.id} onDelete={() => handleDelete(inv.id, inv.invoice_no)} />
                     </TableCell>
@@ -330,13 +318,6 @@ export default function BillingPage() {
                           <span className="font-semibold text-sm text-primary">{formatCurrency(inv.total_amount)}</span>
                         </div>
                       </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 border-t bg-muted/40 px-3 py-2.5 rounded-b-xl">
-                      <span className="text-xs text-muted-foreground shrink-0">Status</span>
-                      <span className="ml-auto">
-                        <StatusBadge status={inv.status} />
-                      </span>
                     </div>
                   </CardContent>
                 </Card>

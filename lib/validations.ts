@@ -18,14 +18,29 @@ export const resetPasswordSchema = z.object({
   path: ['confirmPassword'],
 })
 
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, 'Current password is required'),
+  newPassword: z.string().min(8, 'Password must be at least 8 characters'),
+  confirmPassword: z.string(),
+}).refine((data) => data.newPassword === data.confirmPassword, {
+  message: 'Passwords do not match',
+  path: ['confirmPassword'],
+})
+
 export const staffSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters').max(100),
   email: z.string().email('Invalid email address'),
-  mobile: z.string().regex(/^[6-9]\d{9}$/, 'Invalid mobile number').optional().or(z.literal('')),
+  mobile: z.preprocess(
+    (val) => (val === '' || val === null || val === undefined ? undefined : val),
+    z.string().regex(/^[6-9]\d{9}$/, 'Invalid mobile number').optional()
+  ),
   role: z.enum(['ADMIN', 'STAFF']),
   branch: z.string().optional(),
   status: z.enum(['ACTIVE', 'INACTIVE']).default('ACTIVE'),
-  password: z.string().min(8, 'Password must be at least 8 characters').optional(),
+  password: z.preprocess(
+    (val) => (typeof val === 'string' && val.trim() === '' ? undefined : val),
+    z.string().min(8, 'Password must be at least 8 characters').optional()
+  ),
   roleIds: z.array(z.string()).optional(),
 })
 
@@ -33,6 +48,11 @@ export const roleSchema = z.object({
   name: z.string().min(2, 'Role name must be at least 2 characters').max(50),
   description: z.string().optional(),
   permissions: z.array(z.string()),
+})
+
+export const staffPermissionSchema = z.object({
+  userId: z.string().min(1, 'Employee is required'),
+  modules: z.array(z.string()),
 })
 
 const finiteNumber = (min: number, max?: number) =>
@@ -160,6 +180,16 @@ export const vendorSchema = z.object({
   notes: z.string().optional(),
 })
 
+const partySnapshotSchema = z.object({
+  name: z.string().optional(),
+  contactPerson: z.string().optional(),
+  address: z.string().optional(),
+  mobile: z.string().optional(),
+  gstin: z.string().optional(),
+  pan: z.string().optional(),
+  city: z.string().optional(),
+})
+
 export const invoiceItemSchema = z.object({
   productId: z.string().min(1, 'Product required'),
   description: z.string().optional(),
@@ -182,6 +212,10 @@ export const invoiceSchema = z.object({
   terms: z.string().optional(),
   fromQuotationId: z.string().optional(),
   fromChallanId: z.string().optional(),
+  partyDetails: z.object({
+    buyer: partySnapshotSchema.optional(),
+    consignee: partySnapshotSchema.optional(),
+  }).optional(),
   items: z.array(invoiceItemSchema).min(1, 'At least one item required'),
 })
 
@@ -242,6 +276,10 @@ export const quotationSchema = z.object({
   notes: z.string().optional(),
   terms: z.string().optional(),
   roundOff: z.number().default(0),
+  partyDetails: z.object({
+    buyer: partySnapshotSchema.optional(),
+    consignee: partySnapshotSchema.optional(),
+  }).optional(),
   items: z.array(quotationItemSchema).min(1, 'At least one item required'),
 })
 

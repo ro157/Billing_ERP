@@ -47,7 +47,7 @@ const navItems: NavItem[] = [
   { title: 'Reports', href: '/reports', icon: BarChart3, permission: 'reports:view' },
   { title: 'GST Reports', href: '/gst-reports', icon: Receipt, permission: 'gst-reports:view' },
   { title: 'Staff', href: '/staff', icon: UserCog, adminOnly: true },
-  { title: 'Roles & Permissions', href: '/roles', icon: Shield, adminOnly: true },
+  { title: 'Staff Permissions', href: '/roles', icon: Shield, adminOnly: true },
   { title: 'Settings', href: '/settings', icon: Settings, adminOnly: true },
 ]
 
