@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Eye, Edit, Trash2, FileText, Calendar } from 'lucide-react'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { ListPageToolbar } from '@/components/shared/list-page-toolbar'
+import { DocumentPdfViewer } from '@/components/shared/document-pdf-viewer'
 import { parseJsonResponse } from '@/lib/fetch-json'
 
 interface Invoice {
@@ -24,10 +25,12 @@ interface Invoice {
 
 function InvoiceActions({
   id,
+  onView,
   onDelete,
   compact = false,
 }: {
   id: string
+  onView: () => void
   onDelete: () => void
   compact?: boolean
 }) {
@@ -35,11 +38,9 @@ function InvoiceActions({
   const icon = compact ? 'h-3.5 w-3.5' : 'h-4 w-4'
   return (
     <div className="flex items-center justify-end gap-0 shrink-0">
-      <Link href={`/billing/${id}`}>
-        <Button variant="ghost" size="icon" title="View" className={size}>
-          <Eye className={icon} />
-        </Button>
-      </Link>
+      <Button variant="ghost" size="icon" title="View PDF" className={size} onClick={onView}>
+        <Eye className={icon} />
+      </Button>
       <Link href={`/billing/${id}/edit`}>
         <Button variant="ghost" size="icon" title="Edit" className={size}>
           <Edit className={icon} />
@@ -69,6 +70,10 @@ export default function BillingPage() {
   const [page, setPage] = useState(1)
   const [viewMode, setViewMode] = useState<'table' | 'card'>('table')
   const [isMobile, setIsMobile] = useState(false)
+  const [pdfViewerOpen, setPdfViewerOpen] = useState(false)
+  const [pdfViewerUrl, setPdfViewerUrl] = useState<string | null>(null)
+  const [pdfViewerTitle, setPdfViewerTitle] = useState('')
+  const [pdfViewerFilename, setPdfViewerFilename] = useState('invoice.pdf')
 
   const showTable = viewMode === 'table' && !isMobile
   const showCards = viewMode === 'card' || isMobile
@@ -105,6 +110,14 @@ export default function BillingPage() {
   }, [search, fromDate, toDate, page])
 
   useEffect(() => { fetchInvoices() }, [fetchInvoices])
+
+  const handleView = (inv: Invoice) => {
+    const safeName = inv.invoice_no.replace(/[/\\?%*:|"<>]/g, '-')
+    setPdfViewerTitle(inv.invoice_no)
+    setPdfViewerFilename(`${safeName}.pdf`)
+    setPdfViewerUrl(`/api/invoices/${inv.id}/pdf`)
+    setPdfViewerOpen(true)
+  }
 
   const handleDelete = async (id: string, invoiceNo: string) => {
     if (!confirm(`Delete invoice "${invoiceNo}"? Stock will be restored.`)) return
@@ -236,7 +249,11 @@ export default function BillingPage() {
                     <TableCell>{inv.due_date ? formatDate(inv.due_date) : '-'}</TableCell>
                     <TableCell className="text-right font-medium">{formatCurrency(inv.total_amount)}</TableCell>
                     <TableCell className="text-right">
-                      <InvoiceActions id={inv.id} onDelete={() => handleDelete(inv.id, inv.invoice_no)} />
+                      <InvoiceActions
+                        id={inv.id}
+                        onView={() => handleView(inv)}
+                        onDelete={() => handleDelete(inv.id, inv.invoice_no)}
+                      />
                     </TableCell>
                   </TableRow>
                 ))
@@ -276,6 +293,7 @@ export default function BillingPage() {
                         <InvoiceActions
                           compact
                           id={inv.id}
+                          onView={() => handleView(inv)}
                           onDelete={() => handleDelete(inv.id, inv.invoice_no)}
                         />
                       </div>
@@ -309,6 +327,15 @@ export default function BillingPage() {
           )}
         </div>
       )}
+
+      <DocumentPdfViewer
+        open={pdfViewerOpen}
+        onOpenChange={setPdfViewerOpen}
+        pdfApiUrl={pdfViewerUrl}
+        title={pdfViewerTitle}
+        filename={pdfViewerFilename}
+        enableInvoiceCopies
+      />
     </div>
   )
 }

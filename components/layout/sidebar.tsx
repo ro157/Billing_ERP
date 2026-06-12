@@ -22,8 +22,13 @@ import {
   Building2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '@/store/app-store'
+
+interface Branding {
+  companyName: string
+  logo: string | null
+}
 
 interface NavItem {
   title: string
@@ -62,10 +67,28 @@ export function Sidebar({ open }: SidebarProps) {
   const permissions = session?.user?.permissions || []
   const isAdmin = session?.user?.role === 'ADMIN'
   const { mobileSidebarOpen, setMobileSidebarOpen } = useAppStore()
+  const [branding, setBranding] = useState<Branding>({
+    companyName: 'Viros GST',
+    logo: null,
+  })
 
   useEffect(() => {
     setMobileSidebarOpen(false)
   }, [pathname, setMobileSidebarOpen])
+
+  useEffect(() => {
+    fetch('/api/auth/branding')
+      .then((r) => r.json())
+      .then((data: Branding) => {
+        if (data?.companyName) {
+          setBranding({
+            companyName: data.companyName,
+            logo: data.logo ?? null,
+          })
+        }
+      })
+      .catch(() => {})
+  }, [])
 
   const isVisible = (item: NavItem): boolean => {
     if (item.adminOnly) return isAdmin
@@ -92,10 +115,20 @@ export function Sidebar({ open }: SidebarProps) {
         open ? 'md:w-64' : 'md:w-16'
       )}
     >
-      <div className="flex h-14 md:h-16 items-center border-b border-slate-700 px-4">
-        <Building2 className="h-7 w-7 md:h-8 md:w-8 text-blue-400 shrink-0" />
+      <div className="flex h-14 md:h-16 items-center border-b border-slate-700 px-4 min-w-0">
+        {branding.logo ? (
+          <img
+            src={branding.logo}
+            alt={branding.companyName}
+            className="h-7 w-7 md:h-8 md:w-8 shrink-0 object-contain"
+          />
+        ) : (
+          <Building2 className="h-7 w-7 md:h-8 md:w-8 text-blue-400 shrink-0" />
+        )}
         {showLabels && (
-          <span className="ml-3 text-base md:text-lg font-bold text-white truncate">Viros GST</span>
+          <span className="ml-3 text-base md:text-lg font-bold text-white truncate">
+            {branding.companyName}
+          </span>
         )}
       </div>
 

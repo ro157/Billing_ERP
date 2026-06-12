@@ -4,14 +4,22 @@ import { amountInWords } from '@/lib/amount-in-words'
 import { drawDocumentHeader } from '@/lib/document-header-pdf'
 import { computeQuotationItemTotals } from '@/lib/quotation-totals'
 import { INDIAN_STATES, roundToTwo } from '@/lib/utils'
+import {
+  INVOICE_COPY_LABELS,
+  INVOICE_COPY_TYPES,
+  type InvoiceCopyType,
+} from '@/lib/invoice-copy'
 
 const QUOTATION_TITLE_BLUE: [number, number, number] = [41, 98, 160]
 const TEXT: [number, number, number] = [30, 30, 30]
 const BORDER: [number, number, number] = [0, 0, 0]
 const MARGIN = 8
+/** Helvetica lacks U+20B9; Rs. renders reliably in jsPDF */
+const PDF_RUPEE = 'Rs.'
 const DETAIL_FONT_SIZE = 7
 const DETAIL_LINE_HEIGHT = 3.4
 const DETAIL_CELL_PADDING = 2
+const DETAIL_CONTENT_TOP_PAD = 4
 
 export interface QuotationPdfSettings {
   companyName: string
@@ -66,6 +74,47 @@ export interface QuotationPdfData {
   quotation_no: string
   date: string
   valid_until?: string | null
+  subtotal: number
+  discount_amount: number
+  tax_amount: number
+  round_off?: number
+  total_amount: number
+  terms?: string | null
+  notes?: string | null
+  customer: QuotationPdfCustomer
+  consignee?: QuotationPdfCustomer
+  items: QuotationPdfItem[]
+}
+
+export interface InvoicePdfData {
+  invoice_no: string
+  date: string
+  due_date?: string | null
+  subtotal: number
+  discount_amount: number
+  tax_amount: number
+  round_off?: number
+  total_amount: number
+  paid_amount?: number
+  balance_amount?: number
+  gst_type?: string | null
+  terms?: string | null
+  notes?: string | null
+  customer: QuotationPdfCustomer
+  consignee?: QuotationPdfCustomer
+  items: QuotationPdfItem[]
+}
+
+type SalesDocumentKind = 'quotation' | 'invoice'
+
+type SalesDocumentRenderOptions = {
+  copyLabel?: string
+  pageNumber?: number
+  totalPages?: number
+}
+
+type SalesDocumentPdfData = {
+  date: string
   subtotal: number
   discount_amount: number
   tax_amount: number
@@ -209,8 +258,41 @@ function getQuotationMetaFields(quotation: QuotationPdfData): LabeledLine[] {
   return lines
 }
 
+function getInvoiceMetaFields(invoice: InvoicePdfData): LabeledLine[] {
+  const lines: LabeledLine[] = [
+    { label: 'Invoice No.', value: invoice.invoice_no, valueBold: true },
+    { label: 'Invoice Date', value: formatPdfDate(invoice.date), valueBold: true },
+  ]
+  if (invoice.due_date) {
+    lines.push({ label: 'Due Date', value: formatPdfDate(invoice.due_date), valueBold: true })
+  }
+  if (invoice.paid_amount != null && invoice.paid_amount > 0) {
+    lines.push({ label: 'Paid Amount', value: `${PDF_RUPEE} ${formatMoney(invoice.paid_amount)}`, valueBold: true })
+  }
+  if (invoice.balance_amount != null && invoice.balance_amount > 0) {
+    lines.push({ label: 'Balance Due', value: `${PDF_RUPEE} ${formatMoney(invoice.balance_amount)}`, valueBold: true })
+  }
+  return lines
+}
+
+function getDocumentMetaFields(kind: SalesDocumentKind, data: QuotationPdfData | InvoicePdfData): LabeledLine[] {
+  return kind === 'invoice'
+    ? getInvoiceMetaFields(data as InvoicePdfData)
+    : getQuotationMetaFields(data as QuotationPdfData)
+}
+
+function resolveDocumentGstType(
+  settings: QuotationPdfSettings,
+  customer: QuotationPdfCustomer,
+  explicit?: string | null
+): 'CGST_SGST' | 'IGST' {
+  if (explicit === 'IGST') return 'IGST'
+  if (explicit === 'CGST_SGST' || explicit === 'EXEMPT') return 'CGST_SGST'
+  return inferGstType(settings.state, customer.billing_state)
+}
+
 function estimateLabeledBlockHeight(doc: jsPDF, lines: LabeledLine[], maxWidth: number): number {
-  let height = DETAIL_CELL_PADDING * 2
+  let height = DETAIL_CELL_PADDING * 2 + DETAIL_CONTENT_TOP_PAD
   doc.setFontSize(DETAIL_FONT_SIZE)
   for (const line of lines) {
     doc.setFont('helvetica', 'bold')
@@ -225,7 +307,7 @@ function estimateLabeledBlockHeight(doc: jsPDF, lines: LabeledLine[], maxWidth: 
 function drawLabeledBlock(doc: jsPDF, x: number, y: number, maxWidth: number, lines: LabeledLine[]): void {
   doc.setFontSize(DETAIL_FONT_SIZE)
   doc.setTextColor(...TEXT)
-  let cy = y + DETAIL_CELL_PADDING
+  let cy = y + DETAIL_CELL_PADDING + DETAIL_CONTENT_TOP_PAD
   for (const line of lines) {
     doc.setFont('helvetica', 'bold')
     const labelWidth = doc.getTextWidth(line.label) + 1
@@ -249,8 +331,6 @@ const FOOTER_BANK_BODY_H = 36
 const FOOTER_SIGN_IN_RIGHT_H = 17
 const FOOTER_LIGHT_BLUE: [number, number, number] = [232, 240, 250]
 const FOOTER_SUMMARY_ROW_H = 5.5
-/** Helvetica lacks U+20B9; Rs. renders reliably in jsPDF */
-const PDF_RUPEE = 'Rs.'
 
 function itemsTableBorderAllowance(colCount: number): number {
   return (colCount + 1) * TABLE_BORDER_WIDTH
@@ -264,8 +344,43 @@ function getSummaryTableH(isIgst: boolean): number {
   return getSummaryRowCount(isIgst) * FOOTER_SUMMARY_ROW_H + 0.5
 }
 
-function getFooterMainH(isIgst: boolean): number {
-  const leftH = FOOTER_WORDS_H + FOOTER_BANK_BODY_H
+function formatTermLinesForPdf(termsText: string): string[] {
+  const raw = termsText.replace(/\r\n/g, '\n').trim()
+  if (!raw) return []
+  return raw
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => (line.startsWith('#') ? line : `# ${line}`))
+}
+
+function estimateInvoiceTermsBodyH(doc: jsPDF, termsText: string, leftW: number): number {
+  const pad = 2
+  const headerH = 8
+  const sigH = 10
+  const lines = formatTermLinesForPdf(termsText)
+  if (lines.length === 0) return headerH + sigH + 6
+
+  doc.setFontSize(5.8)
+  let bodyH = headerH
+  for (const line of lines.slice(0, 10)) {
+    bodyH += doc.splitTextToSize(line, leftW - pad * 2).length * 3
+  }
+  return bodyH + sigH + 4
+}
+
+function getFooterMainH(
+  isIgst: boolean,
+  kind: SalesDocumentKind,
+  doc: jsPDF,
+  termsText: string,
+  leftW: number
+): number {
+  const leftBodyH =
+    kind === 'invoice'
+      ? estimateInvoiceTermsBodyH(doc, termsText, leftW)
+      : FOOTER_BANK_BODY_H
+  const leftH = FOOTER_WORDS_H + leftBodyH
   const rightH = getSummaryTableH(isIgst) + FOOTER_SIGN_IN_RIGHT_H
   return Math.max(leftH, rightH)
 }
@@ -285,15 +400,25 @@ function computeFooterLayout(
   pageH: number,
   contentW: number,
   terms: string | null | undefined,
-  isIgst: boolean
+  isIgst: boolean,
+  kind: SalesDocumentKind
 ): FooterLayout {
   const bottom = pageH - MARGIN
-  const mainFooterH = getFooterMainH(isIgst)
-  const termsText = terms?.trim()
-  const termLines = termsText
-    ? doc.splitTextToSize(termsText.replace(/\r\n/g, '\n'), contentW - 8).slice(0, 12)
-    : []
-  const termsBlockH = termsText ? 7 + termLines.length * 3.2 + 3 : 0
+  const leftW = contentW * FOOTER_LEFT_RATIO
+  const termsText = terms?.trim() || ''
+  const mainFooterH = getFooterMainH(isIgst, kind, doc, termsText, leftW)
+
+  let termLines: string[] = []
+  let termsBlockH = 0
+
+  if (kind === 'invoice') {
+    termLines = formatTermLinesForPdf(termsText)
+  } else {
+    termLines = termsText
+      ? doc.splitTextToSize(termsText.replace(/\r\n/g, '\n'), contentW - 8).slice(0, 12)
+      : []
+    termsBlockH = termsText ? 7 + termLines.length * 3.2 + 3 : 0
+  }
 
   const footerBottom = bottom
   const termsTop = footerBottom - termsBlockH
@@ -449,20 +574,50 @@ function estimateProductsBlockHeight(
   return 7 + productsH
 }
 
+function drawInvoiceTermsBlock(
+  doc: jsPDF,
+  bodyLeft: number,
+  splitX: number,
+  leftW: number,
+  bankTop: number,
+  bankH: number,
+  termLines: string[],
+  pad: number
+): void {
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(6.5)
+  doc.text('Terms & Condition', bodyLeft + leftW / 2, bankTop + 4, { align: 'center' })
+  doc.line(bodyLeft, bankTop + 5.5, splitX, bankTop + 5.5)
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(5.8)
+  let termY = bankTop + 8
+  const linesToDraw = termLines.length > 0 ? termLines : ['# Payment terms as mutually agreed.']
+  for (const line of linesToDraw.slice(0, 10)) {
+    const wrapped = doc.splitTextToSize(line, leftW - pad * 2)
+    doc.text(wrapped, bodyLeft + pad, termY)
+    termY += wrapped.length * 3
+  }
+
+  doc.setFontSize(5.8)
+  doc.text('Customer Signature', bodyLeft + pad, bankTop + bankH - 3)
+}
+
 function drawQuotationFooter(
   doc: jsPDF,
   bodyLeft: number,
   bodyRight: number,
   contentW: number,
   settings: QuotationPdfSettings,
-  quotation: QuotationPdfData,
+  document: SalesDocumentPdfData,
   isIgst: boolean,
   totalTaxable: number,
   taxAmt: number,
-  layout: FooterLayout
+  layout: FooterLayout,
+  kind: SalesDocumentKind
 ): void {
-  const words = amountInWords(Number(quotation.total_amount)).toUpperCase()
-  const roundOff = Number(quotation.round_off) || 0
+  const words = amountInWords(Number(document.total_amount)).toUpperCase()
+  const roundOff = Number(document.round_off) || 0
   const pad = 2
   const top = layout.mainFooterTop
   const mainH = layout.mainFooterH
@@ -495,38 +650,42 @@ function drawQuotationFooter(
   const wordLines = doc.splitTextToSize(words, leftW - pad * 2)
   doc.text(wordLines.slice(0, 2), bodyLeft + leftW / 2, top + 7.5, { align: 'center' })
 
-  // Left — Bank details + QR
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(6.5)
-  doc.text('Bank Details', bodyLeft + bankTextW / 2, bankTop + 4, { align: 'center' })
-  doc.line(qrColX, bankTop, qrColX, top + mainH)
-
-  let bankY = bankTop + 7
-  const bankLines = [
-    ['Name', settings.bankName || '-'],
-    ['Branch', settings.bankBranch || '-'],
-    ['Acc. Number', settings.bankAccount || '-'],
-    ['IFSC', settings.bankIfsc || '-'],
-    ['MICR Code', settings.bankMicr || '-'],
-    ['UPI ID', settings.upiId || '-'],
-  ]
-  bankLines.forEach(([label, value]) => {
+  if (kind === 'invoice') {
+    drawInvoiceTermsBlock(doc, bodyLeft, splitX, leftW, bankTop, bankH, layout.termLines, pad)
+  } else {
+    // Left — Bank details + QR (quotations only)
     doc.setFont('helvetica', 'bold')
-    doc.setFontSize(5.8)
-    doc.text(`${label} :`, bankTextX + pad, bankY)
-    doc.setFont('helvetica', 'normal')
-    const labelW = doc.getTextWidth(`${label} :`) + 0.5
-    const wrapped = doc.splitTextToSize(value, bankTextW - pad * 2 - labelW)
-    doc.text(wrapped[0] || '-', bankTextX + pad + labelW, bankY)
-    bankY += 3
-  })
+    doc.setFontSize(6.5)
+    doc.text('Bank Details', bodyLeft + bankTextW / 2, bankTop + 4, { align: 'center' })
+    doc.line(qrColX, bankTop, qrColX, top + mainH)
 
-  const qrSize = 16
-  const qrBoxX = qrColX + (bankQrW - qrSize) / 2
-  const qrBoxY = bankTop + (bankH - qrSize - 5) / 2
-  doc.rect(qrBoxX, qrBoxY, qrSize, qrSize)
-  doc.setFontSize(5)
-  doc.text('Pay using UPI', qrColX + bankQrW / 2, qrBoxY + qrSize + 3, { align: 'center' })
+    let bankY = bankTop + 7
+    const bankLines = [
+      ['Name', settings.bankName || '-'],
+      ['Branch', settings.bankBranch || '-'],
+      ['Acc. Number', settings.bankAccount || '-'],
+      ['IFSC', settings.bankIfsc || '-'],
+      ['MICR Code', settings.bankMicr || '-'],
+      ['UPI ID', settings.upiId || '-'],
+    ]
+    bankLines.forEach(([label, value]) => {
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(5.8)
+      doc.text(`${label} :`, bankTextX + pad, bankY)
+      doc.setFont('helvetica', 'normal')
+      const labelW = doc.getTextWidth(`${label} :`) + 0.5
+      const wrapped = doc.splitTextToSize(value, bankTextW - pad * 2 - labelW)
+      doc.text(wrapped[0] || '-', bankTextX + pad + labelW, bankY)
+      bankY += 3
+    })
+
+    const qrSize = 16
+    const qrBoxX = qrColX + (bankQrW - qrSize) / 2
+    const qrBoxY = bankTop + (bankH - qrSize - 5) / 2
+    doc.rect(qrBoxX, qrBoxY, qrSize, qrSize)
+    doc.setFontSize(5)
+    doc.text('Pay using UPI', qrColX + bankQrW / 2, qrBoxY + qrSize + 3, { align: 'center' })
+  }
 
   // Right — Tax summary + signatory
   const signTop = top + mainH - FOOTER_SIGN_IN_RIGHT_H
@@ -540,7 +699,7 @@ function drawQuotationFooter(
     totalTaxable,
     taxAmt,
     roundOff,
-    Number(quotation.total_amount)
+    Number(document.total_amount)
   )
   doc.line(splitX, signTop, bodyRight, signTop)
   doc.setFontSize(5.8)
@@ -557,11 +716,11 @@ function drawQuotationFooter(
   doc.text(`For ${settings.companyName}`, bodyRight - pad, signTop + 9, { align: 'right' })
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(5.8)
-  doc.text('Authorized Signatory', bodyRight - pad, signTop + 14, { align: 'right' })
+  doc.text('Authorised Signatory', bodyRight - pad, signTop + 14, { align: 'right' })
 
-  // Terms & Condition (full width below main footer)
-  const termsText = (quotation.terms || settings.termsCondition)?.trim()
-  if (termsText && layout.termsBlockH > 0) {
+  // Terms & Condition (full width below main footer — quotations only)
+  const termsText = (document.terms || settings.termsCondition)?.trim()
+  if (kind !== 'invoice' && termsText && layout.termsBlockH > 0) {
     doc.rect(bodyLeft, layout.termsTop, contentW, layout.termsBlockH, 'FD')
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(7)
@@ -577,11 +736,23 @@ function drawQuotationFooter(
   }
 }
 
-export function generateQuotationPdfBuffer(
-  quotation: QuotationPdfData,
-  settings: QuotationPdfSettings
-): ArrayBuffer {
-  const doc = new jsPDF({ unit: 'mm', format: 'a4' })
+function drawPageNumber(doc: jsPDF, pageNumber: number, totalPages: number): void {
+  const pageW = doc.internal.pageSize.getWidth()
+  const pageH = doc.internal.pageSize.getHeight()
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(7)
+  doc.setTextColor(...TEXT)
+  doc.text(`Page ${pageNumber} of ${totalPages}`, pageW - MARGIN, pageH - 3.5, { align: 'right' })
+}
+
+function renderSalesDocumentPage(
+  doc: jsPDF,
+  kind: SalesDocumentKind,
+  document: SalesDocumentPdfData,
+  settings: QuotationPdfSettings,
+  gstTypeOverride?: string | null,
+  renderOptions?: SalesDocumentRenderOptions
+): void {
   const pageW = doc.internal.pageSize.getWidth()
   const pageH = doc.internal.pageSize.getHeight()
   const contentW = pageW - MARGIN * 2
@@ -611,12 +782,14 @@ export function generateQuotationPdfBuffer(
   doc.setFontSize(12)
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(...QUOTATION_TITLE_BLUE)
-  doc.text('Quotation', pageW / 2, titleMidY, { align: 'center' })
+  doc.text(kind === 'invoice' ? 'Tax Invoice' : 'Quotation', pageW / 2, titleMidY, { align: 'center' })
 
   doc.setFontSize(6.5)
   doc.setTextColor(...TEXT)
   doc.setFont('helvetica', 'bold')
-  doc.text('ORIGINAL FOR RECIPIENT', bodyRight - 2, titleMidY, { align: 'right' })
+  const copyLabel = renderOptions?.copyLabel ?? 'ORIGINAL FOR RECIPIENT'
+  doc.setFontSize(6)
+  doc.text(copyLabel, bodyRight - 2, titleMidY, { align: 'right' })
 
   y += titleRowH
   doc.line(bodyLeft, y, bodyRight, y)
@@ -625,11 +798,11 @@ export function generateQuotationPdfBuffer(
   const colW = contentW / 3
   const cellPad = DETAIL_CELL_PADDING
   const textW = colW - cellPad * 2
-  const consigneeParty = quotation.consignee || quotation.customer
+  const consigneeParty = document.consignee || document.customer
 
-  const buyerFields = getPartyFields(quotation.customer, false)
+  const buyerFields = getPartyFields(document.customer, false)
   const consigneeFields = getPartyFields(consigneeParty, true)
-  const metaFields = getQuotationMetaFields(quotation)
+  const metaFields = getDocumentMetaFields(kind, document as QuotationPdfData & InvoicePdfData)
   const detailsRowHeight = Math.max(
     estimateLabeledBlockHeight(doc, buyerFields, textW),
     estimateLabeledBlockHeight(doc, consigneeFields, textW),
@@ -697,7 +870,7 @@ export function generateQuotationPdfBuffer(
   y += 2
 
   // ── Items table ──
-  const gstType = inferGstType(settings.state, quotation.customer.billing_state)
+  const gstType = resolveDocumentGstType(settings, document.customer, gstTypeOverride)
   const isIgst = gstType === 'IGST'
 
   let totalQty = 0
@@ -711,7 +884,7 @@ export function generateQuotationPdfBuffer(
     ? [['Sr. No.', 'Name of Product / Service', 'HSN / SAC', 'Qty', 'Rate', 'Taxable Value', 'IGST %', 'IGST Amt', 'Total']]
     : [['Sr. No.', 'Name of Product / Service', 'HSN / SAC', 'Qty', 'Rate', 'Taxable Value', 'CGST %', 'CGST Amt', 'SGST Amt', 'Total']]
 
-  const tableBody = quotation.items.map((item, idx) => {
+  const tableBody = document.items.map((item, idx) => {
     const t = computeQuotationItemTotals(
       { quantity: Number(item.quantity), rate: Number(item.rate), discount: Number(item.discount) || 0, gstRate: Number(item.gst_rate) },
       gstType
@@ -749,15 +922,15 @@ export function generateQuotationPdfBuffer(
 
   const itemsTableStartY = y
   const colCount = isIgst ? 9 : 10
-  const termsSource = quotation.terms || settings.termsCondition
-  const useCompactLayout = quotation.items.length <= 2
-  const mainFooterH = getFooterMainH(isIgst)
-  const footerLayout = computeFooterLayout(doc, pageH, contentW, termsSource, isIgst)
+  const termsSource = document.terms || settings.termsCondition
+  const useCompactLayout = document.items.length <= 2
+  const mainFooterH = getFooterMainH(isIgst, kind, doc, termsSource?.trim() || '', contentW * FOOTER_LEFT_RATIO)
+  const footerLayout = computeFooterLayout(doc, pageH, contentW, termsSource, isIgst, kind)
 
   let spacerHeight = 0
   const spacerRows: string[][] = []
   if (useCompactLayout) {
-    const usedHeight = estimateProductsBlockHeight(doc, quotation.items, contentW, isIgst)
+    const usedHeight = estimateProductsBlockHeight(doc, document.items, contentW, isIgst)
     spacerHeight = Math.max(12, footerLayout.totalRowTop - itemsTableStartY - usedHeight - FOOTER_TOTAL_ROW_H)
     if (spacerHeight > 0) {
       spacerRows.push(Array(colCount).fill(''))
@@ -813,6 +986,14 @@ export function generateQuotationPdfBuffer(
       if (isTotalRow) {
         data.cell.styles.fontStyle = 'bold'
         data.cell.styles.fillColor = [245, 248, 252]
+        data.cell.styles.valign = 'middle'
+        data.cell.styles.minCellHeight = FOOTER_TOTAL_ROW_H
+        data.cell.styles.cellPadding = {
+          top: 2.5,
+          right: ITEM_TABLE_CELL_PADDING,
+          bottom: 1,
+          left: ITEM_TABLE_CELL_PADDING,
+        }
         data.cell.styles.lineWidth = {
           ...TABLE_VERTICAL_BORDER,
           top: TABLE_BORDER_WIDTH,
@@ -825,7 +1006,7 @@ export function generateQuotationPdfBuffer(
       data.cell.styles.valign = 'top'
 
       if (data.column.index === 1) {
-        const item = quotation.items[data.row.index]
+        const item = document.items[data.row.index]
         data.cell.text = ['']
         data.cell.styles.minCellHeight = estimateProductCellHeight(
           doc,
@@ -835,10 +1016,39 @@ export function generateQuotationPdfBuffer(
       }
     },
     didDrawCell: (data) => {
-      if (data.section !== 'body' || data.column.index !== 1) return
-      if (data.row.index >= tableBody.length) return
+      if (data.section !== 'body') return
 
-      const item = quotation.items[data.row.index]
+      if (data.row.index === totalRowIndex) {
+        const raw = data.cell.text
+        const text = (Array.isArray(raw) ? raw.join('\n') : String(raw ?? '')).trim()
+        if (!text) return
+
+        doc.setFillColor(245, 248, 252)
+        doc.rect(data.cell.x + 0.2, data.cell.y + 0.2, data.cell.width - 0.4, data.cell.height - 0.4, 'F')
+
+        const rightCols = isIgst ? [3, 4, 5, 7, 8] : [3, 4, 5, 7, 8, 9]
+        const align: 'left' | 'center' | 'right' =
+          data.column.index === 1 ? 'left' : rightCols.includes(data.column.index) ? 'right' : 'center'
+        const pad = 1.5
+        const textX =
+          align === 'right'
+            ? data.cell.x + data.cell.width - pad
+            : align === 'center'
+              ? data.cell.x + data.cell.width / 2
+              : data.cell.x + pad
+        // Fixed offset from top — sits slightly above bottom (jsPDF y is baseline)
+        const textY = data.cell.y + Math.min(3.6, data.cell.height - 2.2)
+
+        doc.setFontSize(ITEM_TABLE_FONT_SIZE)
+        doc.setFont('helvetica', 'bold')
+        doc.setTextColor(...TEXT)
+        doc.text(text, textX, textY, { align })
+        return
+      }
+
+      if (data.column.index !== 1 || data.row.index >= tableBody.length) return
+
+      const item = document.items[data.row.index]
       const fillColor = data.cell.styles.fillColor
       if (Array.isArray(fillColor)) {
         doc.setFillColor(fillColor[0], fillColor[1], fillColor[2])
@@ -850,7 +1060,7 @@ export function generateQuotationPdfBuffer(
   })
 
   const tableEndY = (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y
-  const taxAmt = Number(quotation.tax_amount) || 0
+  const taxAmt = Number(document.tax_amount) || 0
 
   const layout = useCompactLayout
     ? footerLayout
@@ -869,11 +1079,12 @@ export function generateQuotationPdfBuffer(
     bodyRight,
     contentW,
     settings,
-    quotation,
+    document,
     isIgst,
     totalTaxable,
     taxAmt,
-    layout
+    layout,
+    kind
   )
 
   doc.setDrawColor(...BORDER)
@@ -881,5 +1092,45 @@ export function generateQuotationPdfBuffer(
   doc.line(bodyLeft, itemsTableStartY, bodyLeft, layout.footerBottom)
   doc.line(bodyRight, itemsTableStartY, bodyRight, layout.footerBottom)
 
+  drawPageNumber(
+    doc,
+    renderOptions?.pageNumber ?? 1,
+    renderOptions?.totalPages ?? 1
+  )
+}
+
+export function generateQuotationPdfBuffer(
+  quotation: QuotationPdfData,
+  settings: QuotationPdfSettings
+): ArrayBuffer {
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' })
+  renderSalesDocumentPage(doc, 'quotation', quotation, settings, undefined, {
+    copyLabel: 'ORIGINAL FOR RECIPIENT',
+    pageNumber: 1,
+    totalPages: 1,
+  })
   return doc.output('arraybuffer')
 }
+
+export function generateInvoicePdfBuffer(
+  invoice: InvoicePdfData,
+  settings: QuotationPdfSettings,
+  copies: InvoiceCopyType[] = ['original']
+): ArrayBuffer {
+  const selected = INVOICE_COPY_TYPES.filter((copy) => copies.includes(copy))
+  const pages = selected.length > 0 ? selected : (['original'] as InvoiceCopyType[])
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' })
+
+  pages.forEach((copy, index) => {
+    if (index > 0) doc.addPage()
+    renderSalesDocumentPage(doc, 'invoice', invoice, settings, invoice.gst_type, {
+      copyLabel: INVOICE_COPY_LABELS[copy],
+      pageNumber: index + 1,
+      totalPages: pages.length,
+    })
+  })
+
+  return doc.output('arraybuffer')
+}
+
+export type { InvoiceCopyType } from '@/lib/invoice-copy'
