@@ -309,7 +309,6 @@ export default function InventoryPage() {
     <div className="space-y-4 md:space-y-6 min-w-0">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold">Inventory</h1>
           <p className="text-sm sm:text-base text-muted-foreground">{total} product(s)</p>
         </div>
         <div className="grid grid-cols-2 gap-2 w-full sm:flex sm:flex-wrap sm:w-auto sm:items-center">

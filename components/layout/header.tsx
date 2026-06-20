@@ -1,16 +1,19 @@
 'use client'
 
 import { useSession, signOut } from 'next-auth/react'
+import { usePathname } from 'next/navigation'
 import { Menu, Bell, LogOut, User, Settings, Shield } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/store/app-store'
 import { getInitials } from '@/lib/utils'
+import { getPageTitleFromPath } from '@/lib/permissions'
 import Link from 'next/link'
 import { useState, useRef, useEffect } from 'react'
-import { OrgSwitcher } from '@/components/layout/org-switcher'
 import { ThemeModeToggle } from '@/components/layout/theme-mode-toggle'
 
 export function Header() {
+  const pathname = usePathname()
+  const pageTitle = getPageTitleFromPath(pathname)
   const { toggleSidebar, mobileSidebarOpen, setMobileSidebarOpen } = useAppStore()
   const { data: session } = useSession()
   const [dropdownOpen, setDropdownOpen] = useState(false)
@@ -35,17 +38,16 @@ export function Header() {
   }
 
   return (
-    <header className="sticky top-0 z-20 flex h-14 md:h-16 items-center justify-between border-b border-border bg-background px-3 md:px-4 shadow-sm">
-      <Button variant="ghost" size="icon" onClick={handleMenuClick} aria-label="Toggle menu">
-        <Menu className="h-5 w-5" />
-      </Button>
-
-      <div className="flex items-center gap-2 min-w-0">
-        <OrgSwitcher />
+    <header className="sticky top-0 z-20 flex h-14 md:h-16 items-center justify-between gap-3 border-b border-border bg-background px-3 md:px-4 shadow-sm">
+      <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+        <Button variant="ghost" size="icon" onClick={handleMenuClick} aria-label="Toggle menu" className="shrink-0">
+          <Menu className="h-5 w-5" />
+        </Button>
+        <h1 className="truncate text-base font-semibold text-foreground sm:text-lg">{pageTitle}</h1>
         {session?.user?.isSuperAdmin && (
           <Link
             href="/superadmin"
-            className="hidden sm:flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100"
+            className="hidden lg:flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-200 dark:hover:bg-amber-950"
           >
             <Shield className="h-3.5 w-3.5" />
             Super Admin
@@ -53,7 +55,7 @@ export function Header() {
         )}
       </div>
 
-      <div className="flex items-center gap-2 md:gap-3">
+      <div className="flex shrink-0 items-center gap-2 md:gap-3">
         <ThemeModeToggle />
         <Button variant="ghost" size="icon" aria-label="Notifications">
           <Bell className="h-5 w-5" />

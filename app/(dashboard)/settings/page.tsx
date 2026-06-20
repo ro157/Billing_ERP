@@ -21,7 +21,6 @@ import {
   SIDEBAR_COLOR_PRESETS,
   isValidHexColor,
   applyOrgTheme,
-  deriveOrgTheme,
 } from '@/lib/theme'
 
 
@@ -83,10 +82,6 @@ export default function SettingsPage() {
     }
   }, [watchedValues.sidebarColor])
 
-  const themePreview = deriveOrgTheme(
-    isValidHexColor(watchedValues.sidebarColor) ? watchedValues.sidebarColor! : DEFAULT_SIDEBAR_COLOR
-  )
-
   const handleLogoChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
@@ -135,7 +130,6 @@ export default function SettingsPage() {
   return (
     <div className="space-y-6 max-w-5xl">
       <div>
-        <h1 className="text-2xl font-bold">Business Settings</h1>
         <p className="text-muted-foreground">Configure your company information</p>
       </div>
 
@@ -263,82 +257,54 @@ export default function SettingsPage() {
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-stretch">
-              <div className="flex-1 space-y-4">
-                <div className="space-y-2">
-                  <Label>Theme Color</Label>
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="color"
-                      value={isValidHexColor(watchedValues.sidebarColor) ? watchedValues.sidebarColor! : DEFAULT_SIDEBAR_COLOR}
-                      onChange={(e) => setValue('sidebarColor', e.target.value, { shouldDirty: true })}
-                      className="h-11 w-14 cursor-pointer rounded-md border border-slate-200 bg-white p-1"
-                      aria-label="Pick theme color"
-                    />
-                    <Input
-                      value={watchedValues.sidebarColor || DEFAULT_SIDEBAR_COLOR}
-                      onChange={(e) => {
-                        const v = e.target.value
-                        if (v.length <= 7) setValue('sidebarColor', v, { shouldDirty: true })
-                      }}
-                      placeholder="#0f172a"
-                      className="w-32 font-mono uppercase"
-                      maxLength={7}
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setValue('sidebarColor', DEFAULT_SIDEBAR_COLOR, { shouldDirty: true })}
-                    >
-                      Reset
-                    </Button>
-                  </div>
-                  {errors.sidebarColor && (
-                    <p className="text-sm text-destructive">{errors.sidebarColor.message}</p>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Quick presets</Label>
-                  <div className="flex flex-wrap gap-2">
-                    {SIDEBAR_COLOR_PRESETS.map((preset) => (
-                      <button
-                        key={preset.value}
-                        type="button"
-                        title={preset.name}
-                        onClick={() => setValue('sidebarColor', preset.value, { shouldDirty: true })}
-                        className="h-9 w-9 rounded-md border-2 border-white shadow ring-1 ring-slate-200 transition-transform hover:scale-105"
-                        style={{ backgroundColor: preset.value }}
-                        aria-label={`${preset.name} theme color`}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex w-full max-w-sm flex-col gap-3 rounded-xl border bg-slate-50 p-4">
-                <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Live preview</p>
-                <div
-                  className="rounded-lg p-3 text-white"
-                  style={{ backgroundColor: themePreview.sidebar }}
+            <div className="space-y-2">
+              <Label>Theme Color</Label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="color"
+                  value={isValidHexColor(watchedValues.sidebarColor) ? watchedValues.sidebarColor! : DEFAULT_SIDEBAR_COLOR}
+                  onChange={(e) => setValue('sidebarColor', e.target.value, { shouldDirty: true })}
+                  className="h-11 w-14 cursor-pointer rounded-md border border-slate-200 bg-white p-1"
+                  aria-label="Pick theme color"
+                />
+                <Input
+                  value={watchedValues.sidebarColor || DEFAULT_SIDEBAR_COLOR}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    if (v.length <= 7) setValue('sidebarColor', v, { shouldDirty: true })
+                  }}
+                  placeholder="#0f172a"
+                  className="w-32 font-mono uppercase"
+                  maxLength={7}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setValue('sidebarColor', DEFAULT_SIDEBAR_COLOR, { shouldDirty: true })}
                 >
-                  <p className="mb-2 text-xs text-white/70">Sidebar</p>
-                  <div
-                    className="rounded-md px-3 py-2 text-sm font-medium text-primary-foreground shadow-sm"
-                    style={{ backgroundColor: `hsl(${themePreview.primary})` }}
-                  >
-                    Active menu item
-                  </div>
-                  <div className="mt-1 rounded-md px-3 py-2 text-sm text-white/80">Menu item</div>
-                </div>
-                <div className="rounded-lg border bg-white p-3">
-                  <p className="mb-2 text-xs text-slate-500">Module button</p>
-                  <Button type="button" className="w-full pointer-events-none">
-                    <Save className="w-4 h-4 mr-2" />
-                    Save Settings
-                  </Button>
-                </div>
+                  Reset
+                </Button>
+              </div>
+              {errors.sidebarColor && (
+                <p className="text-sm text-destructive">{errors.sidebarColor.message}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label>Quick presets</Label>
+              <div className="flex flex-wrap gap-2">
+                {SIDEBAR_COLOR_PRESETS.map((preset) => (
+                  <button
+                    key={preset.value}
+                    type="button"
+                    title={preset.name}
+                    onClick={() => setValue('sidebarColor', preset.value, { shouldDirty: true })}
+                    className="h-9 w-9 rounded-md border-2 border-white shadow ring-1 ring-slate-200 transition-transform hover:scale-105"
+                    style={{ backgroundColor: preset.value }}
+                    aria-label={`${preset.name} theme color`}
+                  />
+                ))}
               </div>
             </div>
           </CardContent>

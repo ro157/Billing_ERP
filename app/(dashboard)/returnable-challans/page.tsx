@@ -37,7 +37,7 @@ export default function ReturnableChallansPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div><h1 className="text-2xl font-bold">Returnable Challans</h1><p className="text-muted-foreground">{total} challan(s)</p></div>
+        <div><p className="text-muted-foreground">{total} challan(s)</p></div>
         <Link href="/returnable-challans/new"><Button><Plus className="w-4 h-4 mr-2" />New RC</Button></Link>
       </div>
 

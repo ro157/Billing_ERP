@@ -151,7 +151,6 @@ export default function QuotationsPage() {
   return (
     <div className="space-y-4 md:space-y-6 min-w-0">
       <div className="min-w-0">
-        <h1 className="text-xl sm:text-2xl font-bold">Quotations</h1>
         <p className="text-sm sm:text-base text-muted-foreground">{total} quotation(s)</p>
       </div>
 

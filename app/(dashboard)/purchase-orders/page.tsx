@@ -41,7 +41,7 @@ export default function PurchaseOrdersPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div><h1 className="text-2xl font-bold">Purchase Orders</h1><p className="text-muted-foreground">{total} PO(s)</p></div>
+        <div><p className="text-muted-foreground">{total} PO(s)</p></div>
         <Link href="/purchase-orders/new"><Button><Plus className="w-4 h-4 mr-2" />New PO</Button></Link>
       </div>
 

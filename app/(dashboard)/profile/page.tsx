@@ -130,7 +130,6 @@ export default function ProfilePage() {
   return (
     <div className="space-y-6 max-w-3xl">
       <div>
-        <h1 className="text-xl md:text-2xl font-bold">My Profile</h1>
         <p className="text-sm text-muted-foreground">View your account details</p>
       </div>
 

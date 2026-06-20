@@ -19,9 +19,9 @@ export function ThemeModeToggle() {
       title={isDark ? 'Light mode' : 'Dark mode'}
     >
       {isDark ? (
-        <Moon className="h-5 w-5 text-amber-400" />
+        <Moon className="h-5 w-5 text-primary" />
       ) : (
-        <Sun className="h-5 w-5 text-amber-500" />
+        <Sun className="h-5 w-5 text-primary" />
       )}
     </Button>
   )

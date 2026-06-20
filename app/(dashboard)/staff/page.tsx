@@ -112,7 +112,7 @@ export default function StaffPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div><h1 className="text-2xl font-bold">Staff Management</h1><p className="text-muted-foreground">{total} member(s)</p></div>
+        <div><p className="text-muted-foreground">{total} member(s)</p></div>
         <Button onClick={openNew}><Plus className="w-4 h-4 mr-2" />Add Staff</Button>
       </div>
 

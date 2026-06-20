@@ -40,6 +40,43 @@ export function moduleFromPath(path: string): string | null {
   return null
 }
 
+const MODULE_DISPLAY_TITLES: Record<string, string> = {
+  dashboard: 'Dashboard',
+  inventory: 'Inventory',
+  customers: 'Customers',
+  vendors: 'Vendors',
+  quotations: 'Quotations',
+  billing: 'Billing / Invoices',
+  'purchase-orders': 'Purchase Orders',
+  purchases: 'Purchases',
+  'delivery-challans': 'Delivery Challans',
+  'returnable-challans': 'Returnable Challans',
+  reports: 'Reports',
+  'gst-reports': 'GST Reports',
+  staff: 'Staff',
+  roles: 'Staff Permissions',
+  settings: 'Settings',
+  profile: 'Profile',
+}
+
+const EXTRA_PATH_TITLES: { prefix: string; title: string }[] = [
+  { prefix: '/staff', title: 'Staff' },
+  { prefix: '/roles', title: 'Staff Permissions' },
+  { prefix: '/settings', title: 'Settings' },
+  { prefix: '/profile', title: 'Profile' },
+]
+
+/** Header / page title from current route (matches sidebar module names). */
+export function getPageTitleFromPath(path: string): string {
+  for (const { prefix, title } of EXTRA_PATH_TITLES) {
+    if (path === prefix || path.startsWith(`${prefix}/`)) return title
+  }
+  const mod = moduleFromPath(path)
+  if (mod && MODULE_DISPLAY_TITLES[mod]) return MODULE_DISPLAY_TITLES[mod]
+  if (mod) return formatModuleLabel(mod)
+  return 'Dashboard'
+}
+
 export function expandModulesToPermissions(modules: string[]): string[] {
   const permissions: string[] = []
   for (const mod of modules) {

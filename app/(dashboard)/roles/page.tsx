@@ -145,7 +145,6 @@ export default function RolesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Staff Permissions</h1>
           <p className="text-muted-foreground">Assign module access for each employee</p>
         </div>
         <Button onClick={openNew}>

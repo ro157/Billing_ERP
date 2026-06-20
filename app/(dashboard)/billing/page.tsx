@@ -151,7 +151,6 @@ export default function BillingPage() {
   return (
     <div className="space-y-4 md:space-y-6 min-w-0">
       <div className="min-w-0">
-        <h1 className="text-lg sm:text-2xl font-bold truncate">Sales Invoices</h1>
         <p className="text-xs sm:text-base text-muted-foreground">{total} invoice(s)</p>
       </div>
 
