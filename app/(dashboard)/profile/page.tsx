@@ -144,7 +144,7 @@ export default function ProfilePage() {
                 className="h-20 w-20 rounded-full object-cover border"
               />
             ) : (
-              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-blue-600 text-white text-2xl font-semibold shrink-0">
+              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-primary text-primary-foreground text-2xl font-semibold shrink-0">
                 {getInitials(displayName)}
               </div>
             )}

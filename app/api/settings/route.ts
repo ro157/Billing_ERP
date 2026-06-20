@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import db from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
+import { appendOrgFilter } from '@/lib/tenant'
 import { businessSettingsSchema } from '@/lib/validations'
+import { ensureBusinessSettingsBankingColumns } from '@/lib/ensure-business-settings-schema'
+import { normalizeSidebarColor } from '@/lib/theme'
 import { randomUUID } from 'crypto'
 
 async function fileToDataUrl(file: File) {
@@ -10,10 +13,11 @@ async function fileToDataUrl(file: File) {
 }
 
 export async function GET(req: NextRequest) {
-  const { error } = await requirePermission('settings', 'view')
+  const { error, organizationId } = await requirePermission('settings', 'view')
   if (error) return error
 
   try {
+    await ensureBusinessSettingsBankingColumns()
     const [rows] = await db.execute(`
       SELECT
         id,
@@ -28,6 +32,7 @@ export async function GET(req: NextRequest) {
         email,
         website,
         logo,
+        sidebar_color as sidebarColor,
         bank_name as bankName,
         bank_account as bankAccount,
         bank_ifsc as bankIfsc,
@@ -40,8 +45,9 @@ export async function GET(req: NextRequest) {
         created_at,
         updated_at
       FROM business_settings
+      WHERE organization_id = ?
       LIMIT 1
-    `) as any[]
+    `, [organizationId]) as any[]
 
     return NextResponse.json(rows[0] || null)
   } catch (error) {
@@ -51,10 +57,11 @@ export async function GET(req: NextRequest) {
 }
 
 export async function PUT(req: NextRequest) {
-  const { error } = await requirePermission('settings', 'edit')
+  const { error, organizationId } = await requirePermission('settings', 'edit')
   if (error) return error
 
   try {
+    await ensureBusinessSettingsBankingColumns()
     let body: any
     const contentType = req.headers.get('content-type') || ''
 
@@ -73,7 +80,11 @@ export async function PUT(req: NextRequest) {
     }
 
     const data = businessSettingsSchema.parse(body)
-    const [existingRows] = await db.execute('SELECT id, logo FROM business_settings LIMIT 1') as any[]
+    const sidebarColor = normalizeSidebarColor(data.sidebarColor)
+    const [existingRows] = await db.execute(
+      'SELECT id, logo FROM business_settings WHERE organization_id = ? LIMIT 1',
+      [organizationId]
+    ) as any[]
     const existing = existingRows[0]
     const logo = data.logo ?? existing?.logo ?? null
 
@@ -92,6 +103,7 @@ export async function PUT(req: NextRequest) {
           email = ?,
           website = ?,
           logo = ?,
+          sidebar_color = ?,
           bank_name = ?,
           bank_account = ?,
           bank_ifsc = ?,
@@ -102,7 +114,7 @@ export async function PUT(req: NextRequest) {
           challan_prefix = ?,
           terms_condition = ?,
           updated_at = CURRENT_TIMESTAMP
-         WHERE id = ?`,
+         WHERE id = ? AND organization_id = ?`,
         [
           data.companyName,
           data.gstin || null,
@@ -115,6 +127,7 @@ export async function PUT(req: NextRequest) {
           data.email || null,
           data.website || null,
           logo,
+          sidebarColor,
           data.bankName || null,
           data.bankAccount || null,
           data.bankIfsc || null,
@@ -124,7 +137,8 @@ export async function PUT(req: NextRequest) {
           data.purchaseOrderPrefix,
           data.challanPrefix,
           data.termsCondition || null,
-          existing.id
+          existing.id,
+          organizationId,
         ]
       )
     } else {
@@ -132,12 +146,13 @@ export async function PUT(req: NextRequest) {
       const id = randomUUID()
       await db.execute(
         `INSERT INTO business_settings (
-          id, company_name, gstin, pan, address, city, state, pincode,
-          phone, email, website, logo, bank_name, bank_account, bank_ifsc, bank_branch,
+          id, organization_id, company_name, gstin, pan, address, city, state, pincode,
+          phone, email, website, logo, sidebar_color, bank_name, bank_account, bank_ifsc, bank_branch,
           invoice_prefix, quotation_prefix, purchase_order_prefix, challan_prefix, terms_condition
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           id,
+          organizationId,
           data.companyName,
           data.gstin || null,
           data.pan || null,
@@ -149,6 +164,7 @@ export async function PUT(req: NextRequest) {
           data.email || null,
           data.website || null,
           logo,
+          sidebarColor,
           data.bankName || null,
           data.bankAccount || null,
           data.bankIfsc || null,
@@ -177,6 +193,7 @@ export async function PUT(req: NextRequest) {
         email,
         website,
         logo,
+        sidebar_color as sidebarColor,
         bank_name as bankName,
         bank_account as bankAccount,
         bank_ifsc as bankIfsc,
@@ -189,8 +206,9 @@ export async function PUT(req: NextRequest) {
         created_at,
         updated_at
       FROM business_settings
+      WHERE organization_id = ?
       LIMIT 1
-    `) as any[]
+    `, [organizationId]) as any[]
 
     return NextResponse.json(rows[0])
   } catch (err: any) {

@@ -25,10 +25,13 @@ export async function GET() {
   if (user.role === 'STAFF') {
     try {
       await ensureStaffPermissionsSchema()
-      const [modRows] = await db.execute(
-        'SELECT module FROM staff_module_permissions WHERE user_id = ? ORDER BY module ASC',
-        [session!.user.id]
-      ) as any[]
+      const organizationId = session!.user.organizationId
+      const [modRows] = organizationId
+        ? await db.execute(
+            'SELECT module FROM staff_module_permissions WHERE user_id = ? AND organization_id = ? ORDER BY module ASC',
+            [session!.user.id, organizationId]
+          ) as any[]
+        : [[]]
       modules = modRows.map((r: { module: string }) => r.module)
     } catch {
       modules = []

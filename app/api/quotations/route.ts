@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import db from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
+import { appendOrgFilter } from '@/lib/tenant'
 import { quotationSchema } from '@/lib/validations'
 import { ensureQuotationSchema } from '@/lib/ensure-quotation-schema'
 import { buildQuotationTotals, insertQuotationItems } from '@/lib/quotation-save'
 import { randomUUID } from 'crypto'
 
 export async function GET(req: NextRequest) {
-  const { error } = await requirePermission('quotations', 'view')
+  const { error, organizationId } = await requirePermission('quotations', 'view')
   if (error) return error
 
   try {
@@ -26,6 +27,7 @@ export async function GET(req: NextRequest) {
       const s = `%${search}%`
       params.push(s, s)
     }
+    appendOrgFilter(conditions, params, organizationId!, 'q')
     const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''
     const [rows] = await db.execute(
       `SELECT q.*, c.name as customer_name FROM quotations q LEFT JOIN customers c ON q.customer_id = c.id
@@ -50,7 +52,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const { error } = await requirePermission('quotations', 'create')
+  const { error, organizationId } = await requirePermission('quotations', 'create')
   if (error) return error
 
   const conn = await db.getConnection()
@@ -61,12 +63,13 @@ export async function POST(req: NextRequest) {
     await conn.beginTransaction()
 
     const [settings] = await conn.execute(
-      'SELECT quotation_prefix FROM business_settings LIMIT 1'
+      'SELECT quotation_prefix FROM business_settings WHERE organization_id = ? LIMIT 1',
+      [organizationId]
     ) as any[]
     const prefix = settings[0]?.quotation_prefix || 'QT'
     const [last] = await conn.execute(
-      'SELECT quotation_no FROM quotations WHERE quotation_no LIKE ? ORDER BY created_at DESC LIMIT 1',
-      [`${prefix}%`]
+      'SELECT quotation_no FROM quotations WHERE organization_id = ? AND quotation_no LIKE ? ORDER BY created_at DESC LIMIT 1',
+      [organizationId, `${prefix}%`]
     ) as any[]
     let nextNum = 1
     if (last[0]) {
@@ -81,11 +84,12 @@ export async function POST(req: NextRequest) {
     const partyDetailsJson = data.partyDetails ? JSON.stringify(data.partyDetails) : null
 
     await conn.execute(
-      `INSERT INTO quotations (id, quotation_no, customer_id, date, valid_until, gst_type, subtotal,
+      `INSERT INTO quotations (id, organization_id, quotation_no, customer_id, date, valid_until, gst_type, subtotal,
         discount_amount, tax_amount, round_off, total_amount, notes, terms, party_details)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         id,
+        organizationId,
         quotationNo,
         data.customerId,
         data.date,
@@ -106,8 +110,8 @@ export async function POST(req: NextRequest) {
     await conn.commit()
 
     const [rows] = await db.execute(
-      'SELECT q.*, c.name as customer_name FROM quotations q LEFT JOIN customers c ON q.customer_id = c.id WHERE q.id = ?',
-      [id]
+      'SELECT q.*, c.name as customer_name FROM quotations q LEFT JOIN customers c ON q.customer_id = c.id WHERE q.id = ? AND q.organization_id = ?',
+      [id, organizationId]
     ) as any[]
     return NextResponse.json(rows[0], { status: 201 })
   } catch (err: any) {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import db from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
+import { appendOrgFilter } from '@/lib/tenant'
 import { purchaseOrderSchema } from '@/lib/validations'
 import { randomUUID } from 'crypto'
 
@@ -15,7 +16,7 @@ function computeItemTotals(item: any, gstType = 'CGST_SGST') {
 }
 
 export async function GET(req: NextRequest) {
-  const { error } = await requirePermission('purchase-orders', 'view')
+  const { error, organizationId } = await requirePermission('purchase-orders', 'view')
   if (error) return error
 
   const { searchParams } = new URL(req.url)
@@ -29,6 +30,7 @@ export async function GET(req: NextRequest) {
   const params: any[] = []
   if (search) { conditions.push('(po.po_no LIKE ? OR v.name LIKE ?)'); const s = `%${search}%`; params.push(s, s) }
   if (status) { conditions.push('po.status = ?'); params.push(status) }
+  appendOrgFilter(conditions, params, organizationId!, 'po')
 
   const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''
   const [rows] = await db.execute(
@@ -44,7 +46,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const { error } = await requirePermission('purchase-orders', 'create')
+  const { error, organizationId } = await requirePermission('purchase-orders', 'create')
   if (error) return error
 
   const conn = await db.getConnection()
@@ -54,11 +56,13 @@ export async function POST(req: NextRequest) {
     await conn.beginTransaction()
 
     const [settings] = await conn.execute(
-      'SELECT purchase_order_prefix FROM business_settings LIMIT 1'
+      'SELECT purchase_order_prefix FROM business_settings WHERE organization_id = ? LIMIT 1',
+      [organizationId]
     ) as any[]
     const prefix = settings[0]?.purchase_order_prefix || 'PO'
     const [last] = await conn.execute(
-      'SELECT po_no FROM purchase_orders WHERE po_no LIKE ? ORDER BY created_at DESC LIMIT 1', [`${prefix}%`]
+      'SELECT po_no FROM purchase_orders WHERE organization_id = ? AND po_no LIKE ? ORDER BY created_at DESC LIMIT 1',
+      [organizationId, `${prefix}%`]
     ) as any[]
     let nextNum = 1
     if (last[0]) { const m = last[0].po_no.match(/\d+$/); if (m) nextNum = parseInt(m[0]) + 1 }
@@ -74,10 +78,10 @@ export async function POST(req: NextRequest) {
 
     const id = randomUUID()
     await conn.execute(
-      `INSERT INTO purchase_orders (id, po_no, vendor_id, date, expected_date, subtotal,
+      `INSERT INTO purchase_orders (id, organization_id, po_no, vendor_id, date, expected_date, subtotal,
         discount_amount, tax_amount, total_amount, notes, status)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-      [id, poNo, data.vendorId, data.date, data.expectedDate || null,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [id, organizationId, poNo, data.vendorId, data.date, data.expectedDate || null,
        subtotal, totalDiscount, totalCgst + totalSgst + totalIgst, grandTotal,
        data.notes || null, 'PENDING']
     )
@@ -95,7 +99,8 @@ export async function POST(req: NextRequest) {
 
     await conn.commit()
     const [rows] = await db.execute(
-      'SELECT po.*, v.name as vendor_name FROM purchase_orders po LEFT JOIN vendors v ON po.vendor_id = v.id WHERE po.id = ?', [id]
+      'SELECT po.*, v.name as vendor_name FROM purchase_orders po LEFT JOIN vendors v ON po.vendor_id = v.id WHERE po.id = ? AND po.organization_id = ?',
+      [id, organizationId]
     ) as any[]
     return NextResponse.json(rows[0], { status: 201 })
   } catch (err: any) {

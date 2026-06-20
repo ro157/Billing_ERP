@@ -1,12 +1,17 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
+export type ColorMode = 'light' | 'dark'
+
 interface AppState {
   sidebarOpen: boolean
   mobileSidebarOpen: boolean
+  colorMode: ColorMode
   setSidebarOpen: (open: boolean) => void
   setMobileSidebarOpen: (open: boolean) => void
   toggleSidebar: () => void
+  setColorMode: (mode: ColorMode) => void
+  toggleColorMode: () => void
 }
 
 export const useAppStore = create<AppState>()(
@@ -14,13 +19,20 @@ export const useAppStore = create<AppState>()(
     (set) => ({
       sidebarOpen: true,
       mobileSidebarOpen: false,
+      colorMode: 'light',
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
       setMobileSidebarOpen: (open) => set({ mobileSidebarOpen: open }),
       toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
+      setColorMode: (mode) => set({ colorMode: mode }),
+      toggleColorMode: () =>
+        set((state) => ({ colorMode: state.colorMode === 'dark' ? 'light' : 'dark' })),
     }),
     {
       name: 'app-store',
-      partialize: (state) => ({ sidebarOpen: state.sidebarOpen }),
+      partialize: (state) => ({
+        sidebarOpen: state.sidebarOpen,
+        colorMode: state.colorMode,
+      }),
     }
   )
 )

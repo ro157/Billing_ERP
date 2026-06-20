@@ -6,7 +6,15 @@ export default withAuth(
   function middleware(req) {
     const token = req.nextauth.token
     const path = req.nextUrl.pathname
-    const isAdmin = token?.role === 'ADMIN'
+
+    if (path.startsWith('/superadmin')) {
+      if (!token?.isSuperAdmin) {
+        return NextResponse.redirect(new URL('/dashboard', req.url))
+      }
+      return NextResponse.next()
+    }
+
+    const isOrgAdmin = token?.orgRole === 'OWNER' || token?.orgRole === 'ADMIN'
 
     if (path.startsWith('/profile')) {
       return NextResponse.next()
@@ -14,13 +22,13 @@ export default withAuth(
 
     const adminOnlyPaths = ['/staff', '/roles', '/settings']
     if (adminOnlyPaths.some((p) => path.startsWith(p))) {
-      if (!isAdmin) {
+      if (!isOrgAdmin) {
         return NextResponse.redirect(new URL('/dashboard', req.url))
       }
       return NextResponse.next()
     }
 
-    if (!isAdmin) {
+    if (!isOrgAdmin) {
       const module = moduleFromPath(path)
       if (module) {
         const permissions = (token?.permissions as string[]) || []
@@ -56,13 +64,19 @@ export default withAuth(
   },
   {
     callbacks: {
-      authorized: ({ token }) => !!token,
+      authorized: ({ token, req }) => {
+        if (req.nextUrl.pathname.startsWith('/superadmin')) {
+          return Boolean(token?.isSuperAdmin)
+        }
+        return !!token
+      },
     },
   }
 )
 
 export const config = {
   matcher: [
+    '/superadmin/:path*',
     '/dashboard/:path*',
     '/inventory/:path*',
     '/billing/:path*',

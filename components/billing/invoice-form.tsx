@@ -196,7 +196,7 @@ function PartySection({
                 value={fields.name}
                 onChange={(e) => onCustomerNameChange?.(e.target.value)}
                 onFocus={onCustomerFocus}
-                placeholder="Type to search customer..."
+                placeholder="Enter  customer name"
                 autoComplete="off"
                 className={inputClass}
               />

@@ -9,7 +9,7 @@ import { buildPdfParties, parseQuotationPartyDetails } from '@/lib/quotation-par
 import { roundToTwo } from '@/lib/utils'
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  const { error } = await requirePermission('billing', 'view')
+  const { error, organizationId } = await requirePermission('billing', 'view')
   if (error) return error
 
   try {
@@ -20,8 +20,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
               i.gst_type, i.subtotal, i.discount_amount, i.tax_amount, i.total_amount,
               i.paid_amount, i.balance_amount, i.notes, i.terms, i.party_details
        FROM invoices i
-       WHERE i.id = ?`,
-      [params.id]
+       WHERE i.id = ? AND i.organization_id = ?`,
+      [params.id, organizationId]
     ) as any[]
 
     const invoice = invoiceRows[0]
@@ -34,8 +34,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
               billing_address, billing_city, billing_state,
               shipping_address, shipping_city, shipping_state
        FROM customers
-       WHERE id = ?`,
-      [invoice.customer_id]
+       WHERE id = ? AND organization_id = ?`,
+      [invoice.customer_id, organizationId]
     ) as any[]
 
     const customerRow = customerRows[0] || {}
@@ -55,8 +55,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     const [settingsRows] = await db.execute(`
       SELECT company_name, gstin, pan, address, city, state, pincode, phone, email, website, logo,
              bank_name, bank_account, bank_ifsc, bank_branch, bank_micr, upi_id, terms_condition
-      FROM business_settings LIMIT 1
-    `) as any[]
+      FROM business_settings WHERE organization_id = ? LIMIT 1
+    `, [organizationId]) as any[]
 
     const s = settingsRows[0] || {}
     const preRound = roundToTwo(

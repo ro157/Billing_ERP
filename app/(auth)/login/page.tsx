@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
-import { signIn } from 'next-auth/react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, Suspense } from 'react'
+import { getSession, signIn } from 'next-auth/react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { loginSchema, LoginInput } from '@/lib/validations'
@@ -17,10 +17,27 @@ import { Loader2, Eye, EyeOff } from 'lucide-react'
 import Link from 'next/link'
 
 export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
+  )
+}
+
+function LoginForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const { message, showSuccess, showError, clearMessage } = useConsoleMessage()
+
+  useEffect(() => {
+    if (searchParams.get('pending') === '1') {
+      showSuccess(
+        'Registration received. Your organisation is awaiting Super Admin approval. You can sign in once approved.'
+      )
+    }
+  }, [searchParams, showSuccess])
 
   const form = useForm<LoginInput>({
     resolver: zodResolver(loginSchema),
@@ -38,10 +55,22 @@ export default function LoginPage() {
       })
 
       if (result?.error) {
-        showError('Invalid email or password. Please check your credentials and try again.')
+        const msgRes = await fetch('/api/auth/login-message', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: data.email, password: data.password }),
+        })
+        const msgData = await msgRes.json().catch(() => ({}))
+        showError(
+          typeof msgData?.message === 'string'
+            ? msgData.message
+            : 'Invalid email or password. Please check your credentials and try again.'
+        )
       } else {
-        showSuccess('Login successful! Redirecting to dashboard...')
-        setTimeout(() => router.replace('/dashboard'), CONSOLE_MESSAGE_DURATION_MS)
+        const session = await getSession()
+        showSuccess('Login successful! Redirecting...')
+        const destination = session?.user?.isSuperAdmin ? '/superadmin' : '/dashboard'
+        setTimeout(() => router.replace(destination), CONSOLE_MESSAGE_DURATION_MS)
       }
     } finally {
       setLoading(false)
@@ -109,6 +138,12 @@ export default function LoginPage() {
           <Link href="/forgot-password" className="text-sm text-primary hover:underline">
             Forgot your password?
           </Link>
+          <p className="text-sm text-muted-foreground text-center">
+            New organisation?{' '}
+            <Link href="/register" className="text-primary hover:underline">
+              Register Organisation
+            </Link>
+          </p>
         </CardFooter>
       </form>
     </AuthCard>

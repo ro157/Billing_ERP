@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import db from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
+import { appendOrgFilter } from '@/lib/tenant'
 import { vendorSchema } from '@/lib/validations'
 import { ensureVendorContactPersonColumn } from '@/lib/ensure-vendor-schema'
 import { randomUUID } from 'crypto'
@@ -13,7 +14,7 @@ function optionalToNull(value: string | undefined | null): string | null {
 }
 
 export async function GET(req: NextRequest) {
-  const { error } = await requirePermission('vendors', 'view')
+  const { error, organizationId } = await requirePermission('vendors', 'view')
   if (error) return error
 
   const { searchParams } = new URL(req.url)
@@ -22,13 +23,15 @@ export async function GET(req: NextRequest) {
   const limit = parseInt(searchParams.get('limit') || '20')
   const offset = (page - 1) * limit
 
-  let whereClause = ''
-  let params: any[] = []
+  const conditions: string[] = []
+  const params: any[] = []
   if (search) {
-    whereClause = 'WHERE (name LIKE ? OR email LIKE ? OR mobile LIKE ? OR phone LIKE ? OR gstin LIKE ? OR contact_person LIKE ?)'
+    conditions.push('(name LIKE ? OR email LIKE ? OR mobile LIKE ? OR phone LIKE ? OR gstin LIKE ? OR contact_person LIKE ?)')
     const s = `%${search}%`
-    params = [s, s, s, s, s, s]
+    params.push(s, s, s, s, s, s)
   }
+  appendOrgFilter(conditions, params, organizationId!)
+  const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''
 
   try {
     const [rows] = await db.execute(
@@ -46,7 +49,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const { error } = await requirePermission('vendors', 'create')
+  const { error, organizationId } = await requirePermission('vendors', 'create')
   if (error) return error
   try {
     await ensureVendorContactPersonColumn()
@@ -54,15 +57,18 @@ export async function POST(req: NextRequest) {
     const data = vendorSchema.parse(body)
     const id = randomUUID()
     await db.execute(
-      `INSERT INTO vendors (id, name, contact_person, email, mobile, phone, gstin, pan,
+      `INSERT INTO vendors (id, organization_id, name, contact_person, email, mobile, phone, gstin, pan,
         address, city, state, pincode, credit_limit, opening_balance, is_active, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, data.name, data.contactPerson, optionalToNull(data.email), optionalToNull(data.mobile), data.phone,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, organizationId, data.name, data.contactPerson, optionalToNull(data.email), optionalToNull(data.mobile), data.phone,
        data.gstin, optionalToNull(data.pan), data.address,
        optionalToNull(data.city), optionalToNull(data.state), optionalToNull(data.pincode),
        data.creditLimit, data.openingBalance, data.isActive ? 1 : 0, optionalToNull(data.notes)]
     )
-    const [rows] = await db.execute('SELECT * FROM vendors WHERE id = ?', [id]) as any[]
+    const [rows] = await db.execute(
+      'SELECT * FROM vendors WHERE id = ? AND organization_id = ?',
+      [id, organizationId]
+    ) as any[]
     return NextResponse.json(rows[0], { status: 201 })
   } catch (err: any) {
     if (err.name === 'ZodError') return NextResponse.json({ error: err.errors }, { status: 400 })

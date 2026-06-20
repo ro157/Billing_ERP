@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import db from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
+import { appendOrgFilter } from '@/lib/tenant'
 
 export async function GET(req: NextRequest) {
-  const { error } = await requirePermission('reports', 'view')
+  const { error, organizationId } = await requirePermission('reports', 'view')
   if (error) return error
 
   const { searchParams } = new URL(req.url)
@@ -16,53 +17,67 @@ export async function GET(req: NextRequest) {
 
   const dateConditions: string[] = []
   const params: any[] = []
+  appendOrgFilter(dateConditions, params, organizationId!, 'i')
 
-  if (fromDate) { dateConditions.push('date >= ?'); params.push(fromDate) }
-  if (toDate) { dateConditions.push('date <= ?'); params.push(toDate) }
-  const dateWhere = dateConditions.length ? 'WHERE ' + dateConditions.join(' AND ') : ''
+  if (fromDate) { dateConditions.push('i.date >= ?'); params.push(fromDate) }
+  if (toDate) { dateConditions.push('i.date <= ?'); params.push(toDate) }
+  const invoiceDateWhere = 'WHERE ' + dateConditions.join(' AND ')
 
   if (type === 'sales') {
     const [rows] = await db.execute(
       `SELECT i.*, c.name as customer_name FROM invoices i LEFT JOIN customers c ON i.customer_id = c.id
-       ${dateWhere ? dateWhere.replace('date', 'i.date') : ''} ORDER BY i.date DESC LIMIT ? OFFSET ?`,
+       ${invoiceDateWhere} ORDER BY i.date DESC LIMIT ? OFFSET ?`,
       [...params, limit, offset]
     ) as any[]
     const [summary] = await db.execute(
       `SELECT COALESCE(SUM(total_amount),0) as total_sales, COALESCE(SUM(paid_amount),0) as total_received,
               COALESCE(SUM(balance_amount),0) as total_outstanding, COUNT(*) as total_count
-       FROM invoices ${dateWhere ? dateWhere.replace('date', 'date') : ''}`,
+       FROM invoices i ${invoiceDateWhere}`,
       params
     ) as any[]
     return NextResponse.json({ data: rows, summary: summary[0] })
   }
 
   if (type === 'purchases') {
+    const purchaseConditions: string[] = []
+    const purchaseParams: any[] = []
+    appendOrgFilter(purchaseConditions, purchaseParams, organizationId!, 'p')
+    if (fromDate) { purchaseConditions.push('p.date >= ?'); purchaseParams.push(fromDate) }
+    if (toDate) { purchaseConditions.push('p.date <= ?'); purchaseParams.push(toDate) }
+    const purchaseDateWhere = 'WHERE ' + purchaseConditions.join(' AND ')
+
     const [rows] = await db.execute(
       `SELECT p.*, v.name as vendor_name FROM purchases p LEFT JOIN vendors v ON p.vendor_id = v.id
-       ${dateWhere ? dateWhere.replace('date', 'p.date') : ''} ORDER BY p.date DESC LIMIT ? OFFSET ?`,
-      [...params, limit, offset]
+       ${purchaseDateWhere} ORDER BY p.date DESC LIMIT ? OFFSET ?`,
+      [...purchaseParams, limit, offset]
     ) as any[]
     const [summary] = await db.execute(
       `SELECT COALESCE(SUM(total_amount),0) as total_purchases, COALESCE(SUM(paid_amount),0) as total_paid,
               COALESCE(SUM(balance_amount),0) as total_outstanding, COUNT(*) as total_count
-       FROM purchases ${dateWhere ? dateWhere.replace('date', 'date') : ''}`,
-      params
+       FROM purchases p ${purchaseDateWhere}`,
+      purchaseParams
     ) as any[]
     return NextResponse.json({ data: rows, summary: summary[0] })
   }
 
   if (type === 'stock') {
+    const stockConditions: string[] = ['p.is_active = 1']
+    const stockParams: any[] = []
+    appendOrgFilter(stockConditions, stockParams, organizationId!, 'p')
+    const stockWhere = 'WHERE ' + stockConditions.join(' AND ')
+
     const [rows] = await db.execute(
       `SELECT p.*, c.name as category_name, u.short_name as unit_short_name
        FROM products p LEFT JOIN categories c ON p.category_id = c.id LEFT JOIN units u ON p.unit_id = u.id
-       WHERE p.is_active = 1 ORDER BY p.name ASC LIMIT ? OFFSET ?`,
-      [limit, offset]
+       ${stockWhere} ORDER BY p.name ASC LIMIT ? OFFSET ?`,
+      [...stockParams, limit, offset]
     ) as any[]
     const [summary] = await db.execute(
       `SELECT COUNT(*) as total_products,
               SUM(CASE WHEN current_stock <= low_stock_alert THEN 1 ELSE 0 END) as low_stock_count,
               SUM(current_stock * purchase_price) as total_stock_value
-       FROM products WHERE is_active = 1`
+       FROM products p ${stockWhere}`,
+      stockParams
     ) as any[]
     return NextResponse.json({ data: rows, summary: summary[0] })
   }
@@ -76,7 +91,7 @@ export async function GET(req: NextRequest) {
               COALESCE(SUM(i.igst_amount),0) as igst,
               COALESCE(SUM(i.total_amount),0) as total
        FROM invoices i
-       ${dateWhere ? dateWhere.replace('date', 'i.date') : ''}
+       ${invoiceDateWhere}
        GROUP BY DATE_FORMAT(i.date, '%Y-%m') ORDER BY period ASC`,
       params
     ) as any[]

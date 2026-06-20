@@ -337,7 +337,6 @@ export default function PurchasesPage() {
                   <TableHead>Vendor</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
-                  <TableHead>Status</TableHead>
                   <TableHead className="text-center w-[132px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -349,9 +348,6 @@ export default function PurchasesPage() {
                     <TableCell className="whitespace-nowrap">{formatDate(p.date)}</TableCell>
                     <TableCell className="text-right font-medium whitespace-nowrap">
                       {formatCurrency(p.total_amount)}
-                    </TableCell>
-                    <TableCell>
-                      <StatusBadge status={p.status} />
                     </TableCell>
                     <TableCell className="text-center">
                       <PurchaseActions

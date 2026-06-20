@@ -82,6 +82,10 @@
 }
 
 @layer utilities {
+  .bg-org-sidebar {
+    background-color: var(--org-sidebar, #0f172a);
+  }
+
   /* Hide number input spin buttons (Chrome, Safari, Firefox) */
   input[type="number"]::-webkit-outer-spin-button,
   input[type="number"]::-webkit-inner-spin-button {

@@ -1,3 +1,5 @@
+import { INDIAN_STATES } from '@/lib/utils'
+
 export const MOBILE_REGEX = /^[6-9]\d{9}$/
 export const GSTIN_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/
 
@@ -33,6 +35,29 @@ export function validateGstin(
   }
   if (!GSTIN_REGEX.test(trimmed)) {
     return 'Invalid GSTIN (15 characters)'
+  }
+  return undefined
+}
+
+export function getStateCodeByName(stateName: string): string | undefined {
+  const found = INDIAN_STATES.find(
+    (s) => s.name.toLowerCase() === stateName.trim().toLowerCase()
+  )
+  return found?.code
+}
+
+export function validateGstinWithState(
+  gstin: string | null | undefined,
+  stateName: string
+): string | undefined {
+  const gstinErr = validateGstin(gstin, { required: false })
+  if (gstinErr) return gstinErr
+  const trimmed = (gstin ?? '').trim().toUpperCase()
+  if (!trimmed) return undefined
+  const stateCode = getStateCodeByName(stateName)
+  if (!stateCode) return 'Invalid state selected'
+  if (trimmed.slice(0, 2) !== stateCode) {
+    return 'GSTIN state code does not match selected state'
   }
   return undefined
 }

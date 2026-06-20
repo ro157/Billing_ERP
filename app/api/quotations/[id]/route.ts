@@ -6,7 +6,7 @@ import { ensureQuotationSchema } from '@/lib/ensure-quotation-schema'
 import { buildQuotationTotals, insertQuotationItems } from '@/lib/quotation-save'
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  const { error } = await requirePermission('quotations', 'view')
+  const { error, organizationId } = await requirePermission('quotations', 'view')
   if (error) return error
 
   await ensureQuotationSchema()
@@ -28,8 +28,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       c.shipping_state as customer_shipping_state
      FROM quotations q
      LEFT JOIN customers c ON q.customer_id = c.id
-     WHERE q.id = ?`,
-    [params.id]
+     WHERE q.id = ? AND q.organization_id = ?`,
+    [params.id, organizationId]
   ) as any[]
   if (!rows[0]) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
@@ -38,7 +38,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 }
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
-  const { error } = await requirePermission('quotations', 'edit')
+  const { error, organizationId } = await requirePermission('quotations', 'edit')
   if (error) return error
 
   const conn = await db.getConnection()
@@ -47,17 +47,20 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     const body = await req.json()
 
     if (!body.items || !Array.isArray(body.items)) {
-      const [rows] = await conn.execute('SELECT * FROM quotations WHERE id = ?', [params.id]) as any[]
+      const [rows] = await conn.execute(
+        'SELECT * FROM quotations WHERE id = ? AND organization_id = ?',
+        [params.id, organizationId]
+      ) as any[]
       if (!rows[0]) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
       const { notes } = body
       await conn.execute(
-        'UPDATE quotations SET notes = COALESCE(?, notes) WHERE id = ?',
-        [notes || null, params.id]
+        'UPDATE quotations SET notes = COALESCE(?, notes) WHERE id = ? AND organization_id = ?',
+        [notes || null, params.id, organizationId]
       )
       const [updated] = await db.execute(
-        'SELECT q.*, c.name as customer_name FROM quotations q LEFT JOIN customers c ON q.customer_id = c.id WHERE q.id = ?',
-        [params.id]
+        'SELECT q.*, c.name as customer_name FROM quotations q LEFT JOIN customers c ON q.customer_id = c.id WHERE q.id = ? AND q.organization_id = ?',
+        [params.id, organizationId]
       ) as any[]
       return NextResponse.json(updated[0])
     }
@@ -65,10 +68,12 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     const data = quotationSchema.parse(body)
     const gstType = data.gstType || 'CGST_SGST'
 
-    const [existingRows] = await conn.execute('SELECT * FROM quotations WHERE id = ?', [params.id]) as any[]
+    const [existingRows] = await conn.execute(
+      'SELECT * FROM quotations WHERE id = ? AND organization_id = ?',
+      [params.id, organizationId]
+    ) as any[]
     if (!existingRows[0]) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-    const existing = existingRows[0]
     await conn.beginTransaction()
 
     await conn.execute('DELETE FROM quotation_items WHERE quotation_id = ?', [params.id])
@@ -79,7 +84,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     await conn.execute(
       `UPDATE quotations SET customer_id=?, date=?, valid_until=?, gst_type=?, subtotal=?,
         discount_amount=?, tax_amount=?, round_off=?, total_amount=?, notes=?, terms=?, party_details=?
-       WHERE id=?`,
+       WHERE id=? AND organization_id = ?`,
       [
         data.customerId,
         data.date,
@@ -94,6 +99,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
         data.terms || null,
         partyDetailsJson,
         params.id,
+        organizationId,
       ]
     )
 
@@ -101,8 +107,8 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     await conn.commit()
 
     const [rows] = await db.execute(
-      'SELECT q.*, c.name as customer_name FROM quotations q LEFT JOIN customers c ON q.customer_id = c.id WHERE q.id = ?',
-      [params.id]
+      'SELECT q.*, c.name as customer_name FROM quotations q LEFT JOIN customers c ON q.customer_id = c.id WHERE q.id = ? AND q.organization_id = ?',
+      [params.id, organizationId]
     ) as any[]
     return NextResponse.json(rows[0])
   } catch (err: any) {
@@ -120,9 +126,16 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
-  const { error } = await requirePermission('quotations', 'delete')
+  const { error, organizationId } = await requirePermission('quotations', 'delete')
   if (error) return error
+
+  const [existing] = await db.execute(
+    'SELECT id FROM quotations WHERE id = ? AND organization_id = ?',
+    [params.id, organizationId]
+  ) as any[]
+  if (!existing[0]) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
   await db.execute('DELETE FROM quotation_items WHERE quotation_id = ?', [params.id])
-  await db.execute('DELETE FROM quotations WHERE id = ?', [params.id])
+  await db.execute('DELETE FROM quotations WHERE id = ? AND organization_id = ?', [params.id, organizationId])
   return NextResponse.json({ success: true })
 }

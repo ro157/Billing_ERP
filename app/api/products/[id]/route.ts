@@ -11,7 +11,7 @@ function optionalToNull(value: string | undefined | null): string | null {
 }
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  const { error } = await requirePermission('inventory', 'view')
+  const { error, organizationId } = await requirePermission('inventory', 'view')
   if (error) return error
 
   const [rows] = await db.execute(
@@ -20,20 +20,26 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
      LEFT JOIN categories c ON p.category_id = c.id
      LEFT JOIN brands b ON p.brand_id = b.id
      LEFT JOIN units u ON p.unit_id = u.id
-     WHERE p.id = ?`,
-    [params.id]
+     WHERE p.id = ? AND p.organization_id = ?`,
+    [params.id, organizationId]
   ) as any[]
   if (!rows[0]) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   return NextResponse.json(rows[0])
 }
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
-  const { error } = await requirePermission('inventory', 'edit')
+  const { error, organizationId } = await requirePermission('inventory', 'edit')
   if (error) return error
   try {
     const body = await req.json()
     const data = productSchema.parse(body)
     await ensureProductsDiscountColumn()
+
+    const [existing] = await db.execute(
+      'SELECT id FROM products WHERE id = ? AND organization_id = ?',
+      [params.id, organizationId]
+    ) as any[]
+    if (!existing[0]) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     await db.execute(
       `UPDATE products SET
@@ -41,7 +47,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
         category_id = ?, brand_id = ?, unit_id = ?,
         purchase_price = ?, selling_price = ?, mrp = ?,
         gst_rate = ?, gst_type = ?, low_stock_alert = ?, discount = ?, is_active = ?
-       WHERE id = ?`,
+       WHERE id = ? AND organization_id = ?`,
       [
         data.name,
         optionalToNull(data.sku),
@@ -61,14 +67,15 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
         data.discount ?? null,
         data.isActive ? 1 : 0,
         params.id,
+        organizationId,
       ]
     )
 
     const [rows] = await db.execute(
       `SELECT p.*, c.name as category_name, b.name as brand_name, u.name as unit_name, u.short_name as unit_short_name
        FROM products p LEFT JOIN categories c ON p.category_id = c.id
-       LEFT JOIN brands b ON p.brand_id = b.id LEFT JOIN units u ON p.unit_id = u.id WHERE p.id = ?`,
-      [params.id]
+       LEFT JOIN brands b ON p.brand_id = b.id LEFT JOIN units u ON p.unit_id = u.id WHERE p.id = ? AND p.organization_id = ?`,
+      [params.id, organizationId]
     ) as any[]
     return NextResponse.json(rows[0])
   } catch (err: unknown) {
@@ -86,8 +93,13 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
-  const { error } = await requirePermission('inventory', 'delete')
+  const { error, organizationId } = await requirePermission('inventory', 'delete')
   if (error) return error
-  await db.execute('UPDATE products SET is_active = 0 WHERE id = ?', [params.id])
+  const [existing] = await db.execute(
+    'SELECT id FROM products WHERE id = ? AND organization_id = ?',
+    [params.id, organizationId]
+  ) as any[]
+  if (!existing[0]) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  await db.execute('UPDATE products SET is_active = 0 WHERE id = ? AND organization_id = ?', [params.id, organizationId])
   return NextResponse.json({ success: true })
 }

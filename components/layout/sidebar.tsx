@@ -24,10 +24,12 @@ import {
 import { cn } from '@/lib/utils'
 import { useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '@/store/app-store'
+import { DEFAULT_SIDEBAR_COLOR, normalizeSidebarColor } from '@/lib/theme'
 
 interface Branding {
   companyName: string
   logo: string | null
+  sidebarColor: string
 }
 
 interface NavItem {
@@ -70,28 +72,36 @@ export function Sidebar({ open }: SidebarProps) {
   const [branding, setBranding] = useState<Branding>({
     companyName: 'Viros GST',
     logo: null,
+    sidebarColor: DEFAULT_SIDEBAR_COLOR,
   })
+
+  const loadBranding = () => {
+    fetch('/api/auth/branding')
+      .then((r) => r.json())
+      .then((data: Branding) => {
+        setBranding({
+          companyName: data?.companyName || 'Viros GST',
+          logo: data?.logo ?? null,
+          sidebarColor: normalizeSidebarColor(data?.sidebarColor),
+        })
+      })
+      .catch(() => {})
+  }
 
   useEffect(() => {
     setMobileSidebarOpen(false)
   }, [pathname, setMobileSidebarOpen])
 
   useEffect(() => {
-    fetch('/api/auth/branding')
-      .then((r) => r.json())
-      .then((data: Branding) => {
-        if (data?.companyName) {
-          setBranding({
-            companyName: data.companyName,
-            logo: data.logo ?? null,
-          })
-        }
-      })
-      .catch(() => {})
+    loadBranding()
+    window.addEventListener('branding-updated', loadBranding)
+    return () => window.removeEventListener('branding-updated', loadBranding)
   }, [])
 
+  const isOrgAdmin = session?.user?.orgRole === 'OWNER' || session?.user?.orgRole === 'ADMIN'
+
   const isVisible = (item: NavItem): boolean => {
-    if (item.adminOnly) return isAdmin
+    if (item.adminOnly) return isOrgAdmin
     if (!item.permission) return true
     const [module, action] = item.permission.split(':')
     return isAdmin || permissions.includes(`${module}:${action}`)
@@ -106,16 +116,15 @@ export function Sidebar({ open }: SidebarProps) {
 
   return (
     <aside
+      style={{ backgroundColor: branding.sidebarColor }}
       className={cn(
-        'fixed left-0 top-0 z-40 flex h-screen flex-col bg-slate-900 text-white transition-transform duration-300 ease-in-out',
-        // Mobile: off-canvas drawer (full width labels)
+        'fixed left-0 top-0 z-40 flex h-screen flex-col text-white transition-transform duration-300 ease-in-out',
         'w-64 -translate-x-full md:translate-x-0',
         mobileSidebarOpen && 'translate-x-0',
-        // Desktop: collapsed / expanded
         open ? 'md:w-64' : 'md:w-16'
       )}
     >
-      <div className="flex h-14 md:h-16 items-center border-b border-slate-700 px-4 min-w-0">
+      <div className="flex h-14 md:h-16 items-center border-b border-white/10 px-4 min-w-0">
         {branding.logo ? (
           <img
             src={branding.logo}
@@ -145,8 +154,8 @@ export function Sidebar({ open }: SidebarProps) {
                   className={cn(
                     'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors',
                     isActive
-                      ? 'bg-blue-600 text-white'
-                      : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                      ? 'bg-primary text-primary-foreground shadow-sm'
+                      : 'text-slate-200 hover:bg-white/10 hover:text-white'
                   )}
                   title={!showLabels ? item.title : undefined}
                 >

@@ -41,8 +41,8 @@ export function NavigationProgress() {
   if (!active) return null
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-0 z-[100] h-1 overflow-hidden bg-blue-100">
-      <div className="h-full w-1/3 animate-[navigation-progress_1s_ease-in-out_infinite] bg-blue-600" />
+    <div className="pointer-events-none fixed inset-x-0 top-0 z-[100] h-1 overflow-hidden bg-[hsl(var(--org-accent-soft))]">
+      <div className="h-full w-1/3 animate-[navigation-progress_1s_ease-in-out_infinite] bg-primary" />
     </div>
   )
 }

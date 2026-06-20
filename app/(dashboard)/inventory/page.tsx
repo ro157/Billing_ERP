@@ -147,10 +147,17 @@ export default function InventoryPage() {
   }
 
   useEffect(() => {
+    async function fetchOptions(url: string): Promise<SelectOption[]> {
+      const res = await fetch(url)
+      if (!res.ok) return []
+      const data = await res.json()
+      return Array.isArray(data) ? data : []
+    }
+
     Promise.all([
-      fetch('/api/categories').then(r => r.json()),
-      fetch('/api/brands').then(r => r.json()),
-      fetch('/api/units').then(r => r.json()),
+      fetchOptions('/api/categories'),
+      fetchOptions('/api/brands'),
+      fetchOptions('/api/units'),
     ]).then(([cats, brds, unts]) => {
       setCategories(cats)
       setBrands(brds)

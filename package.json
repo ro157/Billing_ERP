@@ -3,8 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "clean": "node scripts/clean-next.cjs",
+    "dev": "node scripts/clean-next.cjs && next dev",
+    "build": "node scripts/clean-next.cjs && next build",
     "start": "next start",
     "lint": "next lint",
     "db:seed": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' prisma/seed.ts"

@@ -16,6 +16,13 @@ import { businessSettingsSchema, type BusinessSettingsInput } from '@/lib/valida
 import { INDIAN_STATES } from '@/lib/utils'
 import { DocumentHeaderPreview } from '@/components/settings/document-header-preview'
 import { sanitizeGstinInput, sanitizeMobileInput } from '@/lib/field-validation'
+import {
+  DEFAULT_SIDEBAR_COLOR,
+  SIDEBAR_COLOR_PRESETS,
+  isValidHexColor,
+  applyOrgTheme,
+  deriveOrgTheme,
+} from '@/lib/theme'
 
 
 export default function SettingsPage() {
@@ -26,7 +33,14 @@ export default function SettingsPage() {
   const [logoFile, setLogoFile] = useState<File | null>(null)
   const { register, handleSubmit, setValue, watch, reset, formState: { errors } } = useForm<BusinessSettingsInput>({
     resolver: zodResolver(businessSettingsSchema),
-    defaultValues: { companyName: '', invoicePrefix: 'VE', quotationPrefix: 'QT', purchaseOrderPrefix: 'PO', challanPrefix: 'DC' }
+    defaultValues: {
+      companyName: '',
+      invoicePrefix: 'VE',
+      quotationPrefix: 'QT',
+      purchaseOrderPrefix: 'PO',
+      challanPrefix: 'DC',
+      sidebarColor: DEFAULT_SIDEBAR_COLOR,
+    }
   })
 
   // Watch all fields for real-time preview updates
@@ -55,12 +69,23 @@ export default function SettingsPage() {
           purchaseOrderPrefix: data.purchase_order_prefix || data.purchaseOrderPrefix || 'PO',
           challanPrefix: data.challan_prefix || data.challanPrefix || 'DC',
           termsCondition: data.terms_condition || data.termsCondition || '',
+          sidebarColor: data.sidebarColor || data.sidebar_color || DEFAULT_SIDEBAR_COLOR,
         })
         setLogoPreview(data.logo || null)
       }
       setLoading(false)
     })
   }, [reset])
+
+  useEffect(() => {
+    if (isValidHexColor(watchedValues.sidebarColor)) {
+      applyOrgTheme(watchedValues.sidebarColor)
+    }
+  }, [watchedValues.sidebarColor])
+
+  const themePreview = deriveOrgTheme(
+    isValidHexColor(watchedValues.sidebarColor) ? watchedValues.sidebarColor! : DEFAULT_SIDEBAR_COLOR
+  )
 
   const handleLogoChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -96,6 +121,7 @@ export default function SettingsPage() {
 
       const res = await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       if (!res.ok) throw new Error('Failed')
+      window.dispatchEvent(new Event('branding-updated'))
       toast({ title: 'Settings saved' })
     } catch {
       toast({ title: 'Error saving settings', variant: 'destructive' })
@@ -223,6 +249,96 @@ export default function SettingsPage() {
               <div className="space-y-2">
                 <Label>Pincode</Label>
                 <Input {...register('pincode')} />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>App Theme</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Pick your brand color — it applies to the sidebar, menu highlights, Save buttons, and
+              all primary actions across modules
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-stretch">
+              <div className="flex-1 space-y-4">
+                <div className="space-y-2">
+                  <Label>Theme Color</Label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="color"
+                      value={isValidHexColor(watchedValues.sidebarColor) ? watchedValues.sidebarColor! : DEFAULT_SIDEBAR_COLOR}
+                      onChange={(e) => setValue('sidebarColor', e.target.value, { shouldDirty: true })}
+                      className="h-11 w-14 cursor-pointer rounded-md border border-slate-200 bg-white p-1"
+                      aria-label="Pick theme color"
+                    />
+                    <Input
+                      value={watchedValues.sidebarColor || DEFAULT_SIDEBAR_COLOR}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        if (v.length <= 7) setValue('sidebarColor', v, { shouldDirty: true })
+                      }}
+                      placeholder="#0f172a"
+                      className="w-32 font-mono uppercase"
+                      maxLength={7}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setValue('sidebarColor', DEFAULT_SIDEBAR_COLOR, { shouldDirty: true })}
+                    >
+                      Reset
+                    </Button>
+                  </div>
+                  {errors.sidebarColor && (
+                    <p className="text-sm text-destructive">{errors.sidebarColor.message}</p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Quick presets</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {SIDEBAR_COLOR_PRESETS.map((preset) => (
+                      <button
+                        key={preset.value}
+                        type="button"
+                        title={preset.name}
+                        onClick={() => setValue('sidebarColor', preset.value, { shouldDirty: true })}
+                        className="h-9 w-9 rounded-md border-2 border-white shadow ring-1 ring-slate-200 transition-transform hover:scale-105"
+                        style={{ backgroundColor: preset.value }}
+                        aria-label={`${preset.name} theme color`}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex w-full max-w-sm flex-col gap-3 rounded-xl border bg-slate-50 p-4">
+                <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Live preview</p>
+                <div
+                  className="rounded-lg p-3 text-white"
+                  style={{ backgroundColor: themePreview.sidebar }}
+                >
+                  <p className="mb-2 text-xs text-white/70">Sidebar</p>
+                  <div
+                    className="rounded-md px-3 py-2 text-sm font-medium text-primary-foreground shadow-sm"
+                    style={{ backgroundColor: `hsl(${themePreview.primary})` }}
+                  >
+                    Active menu item
+                  </div>
+                  <div className="mt-1 rounded-md px-3 py-2 text-sm text-white/80">Menu item</div>
+                </div>
+                <div className="rounded-lg border bg-white p-3">
+                  <p className="mb-2 text-xs text-slate-500">Module button</p>
+                  <Button type="button" className="w-full pointer-events-none">
+                    <Save className="w-4 h-4 mr-2" />
+                    Save Settings
+                  </Button>
+                </div>
               </div>
             </div>
           </CardContent>

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { GSTIN_REGEX, MOBILE_REGEX } from '@/lib/field-validation'
+import { GSTIN_REGEX, MOBILE_REGEX, validateGstinWithState } from '@/lib/field-validation'
 
 const trimString = (v: unknown) => (typeof v === 'string' ? v.trim() : v)
 const emptyToUndefined = (v: unknown) =>
@@ -36,6 +36,48 @@ export const loginSchema = z.object({
   email: z.string().min(1, 'Username is required'),
   password: z.string().min(6, 'Password must be at least 6 characters'),
 })
+
+export const registerSchema = z
+  .object({
+    organizationName: z.string().min(2, 'Organization name must be at least 2 characters').max(100),
+    phone: z.preprocess(
+      trimString,
+      z.string().min(1, 'Phone is required').regex(MOBILE_REGEX, 'Invalid mobile number')
+    ),
+    address: z.preprocess(
+      trimString,
+      z.string().min(5, 'Address is required').max(500)
+    ),
+    gstin: z.preprocess(
+      (v) => {
+        if (typeof v === 'string') {
+          const t = v.trim().toUpperCase()
+          return t === '' ? undefined : t
+        }
+        return v
+      },
+      z.string().regex(GSTIN_REGEX, 'Invalid GSTIN').optional()
+    ),
+    state: z.preprocess(trimString, z.string().min(1, 'State is required')),
+    pincode: z.preprocess(
+      trimString,
+      z.string().min(1, 'Pincode is required').regex(/^\d{6}$/, 'Pincode must be 6 digits')
+    ),
+    name: z.string().min(2, 'Name must be at least 2 characters').max(100),
+    email: z.string().email('Invalid email address'),
+    password: z.string().min(8, 'Password must be at least 8 characters'),
+    confirmPassword: z.string(),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: 'Passwords do not match',
+    path: ['confirmPassword'],
+  })
+  .superRefine((data, ctx) => {
+    const gstinStateErr = validateGstinWithState(data.gstin, data.state)
+    if (gstinStateErr) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: gstinStateErr, path: ['gstin'] })
+    }
+  })
 
 export const forgotPasswordSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -335,9 +377,15 @@ export const businessSettingsSchema = z.object({
   purchaseOrderPrefix: z.string().default('PO'),
   challanPrefix: z.string().default('DC'),
   termsCondition: z.string().optional(),
+  sidebarColor: z
+    .string()
+    .regex(/^#[0-9A-Fa-f]{6}$/, 'Enter a valid hex color (e.g. #0f172a)')
+    .default('#0f172a')
+    .optional(),
 })
 
 export type LoginInput = z.infer<typeof loginSchema>
+export type RegisterInput = z.infer<typeof registerSchema>
 export type StaffInput = z.infer<typeof staffSchema>
 export type RoleInput = z.infer<typeof roleSchema>
 export type ProductInput = z.infer<typeof productSchema>

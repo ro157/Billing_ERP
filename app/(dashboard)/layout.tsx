@@ -3,6 +3,7 @@
 import { Sidebar } from '@/components/layout/sidebar'
 import { Header } from '@/components/layout/header'
 import { NavigationProgress } from '@/components/layout/navigation-progress'
+import { OrgThemeProvider } from '@/components/layout/org-theme-provider'
 import { useAppStore } from '@/store/app-store'
 import { cn } from '@/lib/utils'
 
@@ -10,7 +11,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { sidebarOpen, mobileSidebarOpen, setMobileSidebarOpen } = useAppStore()
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
+    <OrgThemeProvider>
+      <div className="flex min-h-screen bg-slate-50 dark:bg-background">
       <NavigationProgress />
       <Sidebar open={sidebarOpen} />
       {mobileSidebarOpen && (
@@ -31,6 +33,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <Header />
         <main className="flex-1 min-w-0 overflow-x-hidden p-3 sm:p-4 md:p-6">{children}</main>
       </div>
-    </div>
+      </div>
+    </OrgThemeProvider>
   )
 }

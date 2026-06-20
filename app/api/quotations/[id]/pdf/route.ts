@@ -7,7 +7,7 @@ import { generateQuotationPdfBuffer } from '@/lib/quotation-pdf'
 import { buildPdfParties, parseQuotationPartyDetails } from '@/lib/quotation-party'
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  const { error } = await requirePermission('quotations', 'view')
+  const { error, organizationId } = await requirePermission('quotations', 'view')
   if (error) return error
 
   try {
@@ -18,8 +18,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
               q.subtotal, q.discount_amount, q.tax_amount, q.round_off, q.total_amount,
               q.notes, q.terms, q.party_details
        FROM quotations q
-       WHERE q.id = ?`,
-      [params.id]
+       WHERE q.id = ? AND q.organization_id = ?`,
+      [params.id, organizationId]
     ) as any[]
 
     const quotation = quotationRows[0]
@@ -32,8 +32,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
               billing_address, billing_city, billing_state,
               shipping_address, shipping_city, shipping_state
        FROM customers
-       WHERE id = ?`,
-      [quotation.customer_id]
+       WHERE id = ? AND organization_id = ?`,
+      [quotation.customer_id, organizationId]
     ) as any[]
 
     const customerRow = customerRows[0] || {}
@@ -53,8 +53,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     const [settingsRows] = await db.execute(`
       SELECT company_name, gstin, pan, address, city, state, pincode, phone, email, website, logo,
              bank_name, bank_account, bank_ifsc, bank_branch, bank_micr, upi_id, terms_condition
-      FROM business_settings LIMIT 1
-    `) as any[]
+      FROM business_settings WHERE organization_id = ? LIMIT 1
+    `, [organizationId]) as any[]
 
     const s = settingsRows[0] || {}
 

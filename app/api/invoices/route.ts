@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import db from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
+import { appendOrgFilter } from '@/lib/tenant'
 import { invoiceSchema } from '@/lib/validations'
 import { ensureInvoiceSchema } from '@/lib/ensure-invoice-schema'
 import { calculateGST, roundToNearestRupee, roundToTwo } from '@/lib/utils'
@@ -20,7 +21,7 @@ function computeItemTotals(item: any, gstType: string) {
 }
 
 export async function GET(req: NextRequest) {
-  const { error } = await requirePermission('billing', 'view')
+  const { error, organizationId } = await requirePermission('billing', 'view')
   if (error) return error
 
   const { searchParams } = new URL(req.url)
@@ -42,6 +43,7 @@ export async function GET(req: NextRequest) {
   if (customerId) { conditions.push('i.customer_id = ?'); params.push(customerId) }
   if (fromDate) { conditions.push('i.date >= ?'); params.push(fromDate) }
   if (toDate) { conditions.push('i.date <= ?'); params.push(toDate) }
+  appendOrgFilter(conditions, params, organizationId!, 'i')
 
   const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''
   try {
@@ -61,7 +63,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const { error } = await requirePermission('billing', 'create')
+  const { error, organizationId } = await requirePermission('billing', 'create')
   if (error) return error
 
   const conn = await db.getConnection()
@@ -73,10 +75,14 @@ export async function POST(req: NextRequest) {
     await conn.beginTransaction()
 
     // Generate invoice number
-    const [settings] = await conn.execute('SELECT invoice_prefix FROM business_settings LIMIT 1') as any[]
+    const [settings] = await conn.execute(
+      'SELECT invoice_prefix FROM business_settings WHERE organization_id = ? LIMIT 1',
+      [organizationId]
+    ) as any[]
     const prefix = settings[0]?.invoice_prefix || 'INV'
     const [lastInv] = await conn.execute(
-      'SELECT invoice_no FROM invoices WHERE invoice_no LIKE ? ORDER BY created_at DESC LIMIT 1', [`${prefix}%`]
+      'SELECT invoice_no FROM invoices WHERE organization_id = ? AND invoice_no LIKE ? ORDER BY created_at DESC LIMIT 1',
+      [organizationId, `${prefix}%`]
     ) as any[]
     let nextNum = 1
     if (lastInv[0]) { const m = lastInv[0].invoice_no.match(/\d+$/); if (m) nextNum = parseInt(m[0]) + 1 }
@@ -100,11 +106,11 @@ export async function POST(req: NextRequest) {
     const id = randomUUID()
     const partyDetailsJson = data.partyDetails ? JSON.stringify(data.partyDetails) : null
     await conn.execute(
-      `INSERT INTO invoices (id, invoice_no, customer_id, date, due_date, gst_type, place_of_supply,
+      `INSERT INTO invoices (id, organization_id, invoice_no, customer_id, date, due_date, gst_type, place_of_supply,
         subtotal, discount_amount, cgst_amount, sgst_amount, igst_amount, tax_amount, total_amount,
         paid_amount, balance_amount, payment_mode, notes, terms, party_details)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [id, invoiceNo, data.customerId, data.date, data.dueDate || null,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [id, organizationId, invoiceNo, data.customerId, data.date, data.dueDate || null,
        gstType, data.placeOfSupply || null,
        roundToTwo(subtotal), roundToTwo(totalDiscount), roundToTwo(totalCgst), roundToTwo(totalSgst), roundToTwo(totalIgst), taxAmount, totalAmount,
        data.paidAmount, roundToTwo(totalAmount - data.paidAmount),
@@ -124,10 +130,13 @@ export async function POST(req: NextRequest) {
          item.cgst, item.sgst, item.igst, item.cgst + item.sgst + item.igst, item.total]
       )
       if (item.productId) {
-        await conn.execute('UPDATE products SET current_stock = current_stock - ? WHERE id = ?', [item.quantity, item.productId])
+        await conn.execute(
+          'UPDATE products SET current_stock = current_stock - ? WHERE id = ? AND organization_id = ?',
+          [item.quantity, item.productId, organizationId]
+        )
         const [[stockRow]] = await conn.execute(
-          'SELECT current_stock FROM products WHERE id = ?',
-          [item.productId]
+          'SELECT current_stock FROM products WHERE id = ? AND organization_id = ?',
+          [item.productId, organizationId]
         ) as any[][]
         await conn.execute(
           'INSERT INTO stock_movements (id, product_id, type, quantity, balance_after, reference_type, reference_id, note) VALUES (?,?,?,?,?,?,?,?)',
@@ -145,7 +154,8 @@ export async function POST(req: NextRequest) {
 
     await conn.commit()
     const [rows] = await db.execute(
-      'SELECT i.*, c.name as customer_name FROM invoices i LEFT JOIN customers c ON i.customer_id = c.id WHERE i.id = ?', [id]
+      'SELECT i.*, c.name as customer_name FROM invoices i LEFT JOIN customers c ON i.customer_id = c.id WHERE i.id = ? AND i.organization_id = ?',
+      [id, organizationId]
     ) as any[]
     return NextResponse.json(rows[0], { status: 201 })
   } catch (err: any) {

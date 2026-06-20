@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import db from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
+import { appendOrgFilter } from '@/lib/tenant'
 import { purchaseSchema } from '@/lib/validations'
 import { ensurePurchaseSchema } from '@/lib/ensure-purchase-schema'
 import { computePurchaseItemTotals } from '@/lib/purchase-totals'
@@ -9,7 +10,7 @@ import { randomUUID } from 'crypto'
 import { apiErrorResponse } from '@/lib/api-error'
 
 export async function GET(req: NextRequest) {
-  const { error } = await requirePermission('purchases', 'view')
+  const { error, organizationId } = await requirePermission('purchases', 'view')
   if (error) return error
 
   const { searchParams } = new URL(req.url)
@@ -29,6 +30,7 @@ export async function GET(req: NextRequest) {
   if (vendorId) { conditions.push('p.vendor_id = ?'); params.push(vendorId) }
   if (fromDate) { conditions.push('p.date >= ?'); params.push(fromDate) }
   if (toDate) { conditions.push('p.date <= ?'); params.push(toDate) }
+  appendOrgFilter(conditions, params, organizationId!, 'p')
 
   const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''
   try {
@@ -48,7 +50,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const { error } = await requirePermission('purchases', 'create')
+  const { error, organizationId } = await requirePermission('purchases', 'create')
   if (error) return error
 
   const conn = await db.getConnection()
@@ -61,8 +63,8 @@ export async function POST(req: NextRequest) {
 
     const prefix = 'PUR'
     const [last] = await conn.execute(
-      'SELECT purchase_no FROM purchases WHERE purchase_no LIKE ? ORDER BY created_at DESC LIMIT 1',
-      [`${prefix}%`]
+      'SELECT purchase_no FROM purchases WHERE organization_id = ? AND purchase_no LIKE ? ORDER BY created_at DESC LIMIT 1',
+      [organizationId, `${prefix}%`]
     ) as any[]
     let nextNum = 1
     if (last[0]) { const m = last[0].purchase_no.match(/\d+$/); if (m) nextNum = parseInt(m[0]) + 1 }
@@ -94,11 +96,11 @@ export async function POST(req: NextRequest) {
 
     const id = randomUUID()
     await conn.execute(
-      `INSERT INTO purchases (id, purchase_no, vendor_id, date, due_date, gst_type, bill_no, bill_date,
+      `INSERT INTO purchases (id, organization_id, purchase_no, vendor_id, date, due_date, gst_type, bill_no, bill_date,
         subtotal, discount_amount, cgst_amount, sgst_amount, igst_amount, tax_amount, round_off, total_amount,
         paid_amount, balance_amount, payment_mode, notes, status)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [id, purchaseNo, data.vendorId, data.date, data.dueDate || null,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [id, organizationId, purchaseNo, data.vendorId, data.date, data.dueDate || null,
        gstType, data.billNo || null, data.billDate || null,
        subtotal, totalDiscount, totalCgst, totalSgst, totalIgst, totalCgst + totalSgst + totalIgst, roundOff, finalTotal,
        data.paidAmount, finalTotal - data.paidAmount,
@@ -119,10 +121,13 @@ export async function POST(req: NextRequest) {
          item.cgst, item.sgst, item.igst, item.cgst + item.sgst + item.igst, item.total]
       )
       if (item.productId) {
-        await conn.execute('UPDATE products SET current_stock = current_stock + ? WHERE id = ?', [item.quantity, item.productId])
+        await conn.execute(
+          'UPDATE products SET current_stock = current_stock + ? WHERE id = ? AND organization_id = ?',
+          [item.quantity, item.productId, organizationId]
+        )
         const [[stockRow]] = await conn.execute(
-          'SELECT current_stock FROM products WHERE id = ?',
-          [item.productId]
+          'SELECT current_stock FROM products WHERE id = ? AND organization_id = ?',
+          [item.productId, organizationId]
         ) as any[][]
         await conn.execute(
           'INSERT INTO stock_movements (id, product_id, type, quantity, balance_after, reference_type, reference_id, note) VALUES (?,?,?,?,?,?,?,?)',
@@ -133,7 +138,8 @@ export async function POST(req: NextRequest) {
 
     await conn.commit()
     const [rows] = await db.execute(
-      'SELECT p.*, v.name as vendor_name FROM purchases p LEFT JOIN vendors v ON p.vendor_id = v.id WHERE p.id = ?', [id]
+      'SELECT p.*, v.name as vendor_name FROM purchases p LEFT JOIN vendors v ON p.vendor_id = v.id WHERE p.id = ? AND p.organization_id = ?',
+      [id, organizationId]
     ) as any[]
     return NextResponse.json(rows[0], { status: 201 })
   } catch (err: any) {

@@ -3,7 +3,7 @@ import db from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 
 export async function GET(req: NextRequest) {
-  const { error } = await requirePermission('dashboard', 'view')
+  const { error, organizationId } = await requirePermission('dashboard', 'view')
   if (error) return error
 
   try {
@@ -15,22 +15,24 @@ export async function GET(req: NextRequest) {
 
     const [[salesToday]] = await db.execute(
       `SELECT COALESCE(SUM(total_amount),0) as amount, COUNT(*) as count FROM invoices
-       WHERE DATE(date) = ?`,
-      [today]
+       WHERE organization_id = ? AND DATE(date) = ?`,
+      [organizationId, today]
     ) as any[][]
 
     const [[purchasesToday]] = await db.execute(
       `SELECT COALESCE(SUM(total_amount),0) as amount, COUNT(*) as count FROM purchases
-       WHERE DATE(date) = ? AND status != 'CANCELLED'`,
-      [today]
+       WHERE organization_id = ? AND DATE(date) = ? AND status != 'CANCELLED'`,
+      [organizationId, today]
     ) as any[][]
 
     const [[pendingQuotRow]] = await db.execute(
-      `SELECT COUNT(*) as count FROM quotations WHERE converted_to_id IS NULL`
+      `SELECT COUNT(*) as count FROM quotations WHERE organization_id = ? AND converted_to_id IS NULL`,
+      [organizationId]
     ) as any[][]
 
     const [[lowStockRow]] = await db.execute(
-      `SELECT COUNT(*) as count FROM products WHERE current_stock <= low_stock_alert AND is_active = 1`
+      `SELECT COUNT(*) as count FROM products WHERE organization_id = ? AND current_stock <= low_stock_alert AND is_active = 1`,
+      [organizationId]
     ) as any[][]
 
     let chartType: 'monthly' | 'daily' = 'monthly'
@@ -46,19 +48,19 @@ export async function GET(req: NextRequest) {
         `SELECT DATE_FORMAT(date, '%Y-%m-%d') as period,
            COALESCE(SUM(total_amount),0) as total, COUNT(*) as count
          FROM invoices
-         WHERE DATE_FORMAT(date, '%Y-%m') = ?
+         WHERE organization_id = ? AND DATE_FORMAT(date, '%Y-%m') = ?
          GROUP BY DATE_FORMAT(date, '%Y-%m-%d')
          ORDER BY period ASC`,
-        [monthKey]
+        [organizationId, monthKey]
       ) as any[][]
       const [dailyPurchases] = await db.execute(
         `SELECT DATE_FORMAT(date, '%Y-%m-%d') as period,
            COALESCE(SUM(total_amount),0) as total, COUNT(*) as count
          FROM purchases
-         WHERE DATE_FORMAT(date, '%Y-%m') = ? AND status != 'CANCELLED'
+         WHERE organization_id = ? AND DATE_FORMAT(date, '%Y-%m') = ? AND status != 'CANCELLED'
          GROUP BY DATE_FORMAT(date, '%Y-%m-%d')
          ORDER BY period ASC`,
-        [monthKey]
+        [organizationId, monthKey]
       ) as any[][]
       chartSales = dailySales
       chartPurchases = dailyPurchases
@@ -67,19 +69,19 @@ export async function GET(req: NextRequest) {
         `SELECT DATE_FORMAT(date, '%Y-%m') as period,
            COALESCE(SUM(total_amount),0) as total, COUNT(*) as count
          FROM invoices
-         WHERE YEAR(date) = ?
+         WHERE organization_id = ? AND YEAR(date) = ?
          GROUP BY DATE_FORMAT(date, '%Y-%m')
          ORDER BY period ASC`,
-        [year]
+        [organizationId, year]
       ) as any[][]
       const [monthlyPurchases] = await db.execute(
         `SELECT DATE_FORMAT(date, '%Y-%m') as period,
            COALESCE(SUM(total_amount),0) as total, COUNT(*) as count
          FROM purchases
-         WHERE YEAR(date) = ? AND status != 'CANCELLED'
+         WHERE organization_id = ? AND YEAR(date) = ? AND status != 'CANCELLED'
          GROUP BY DATE_FORMAT(date, '%Y-%m')
          ORDER BY period ASC`,
-        [year]
+        [organizationId, year]
       ) as any[][]
       chartSales = monthlySales
       chartPurchases = monthlyPurchases

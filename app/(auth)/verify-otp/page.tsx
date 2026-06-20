@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { Suspense, useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -12,6 +12,14 @@ import { useToast } from '@/hooks/use-toast'
 import Link from 'next/link'
 
 export default function VerifyOTPPage() {
+  return (
+    <Suspense fallback={null}>
+      <VerifyOTPForm />
+    </Suspense>
+  )
+}
+
+function VerifyOTPForm() {
   const [otp, setOtp] = useState('')
   const [loading, setLoading] = useState(false)
   const router = useRouter()

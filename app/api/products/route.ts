@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import db from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
+import { appendOrgFilter } from '@/lib/tenant'
 import { ensureProductsDiscountColumn } from '@/lib/ensure-product-schema'
 import { productSchema } from '@/lib/validations'
 import { randomUUID } from 'crypto'
 import { apiErrorResponse } from '@/lib/api-error'
 
 export async function GET(req: NextRequest) {
-  const { error } = await requirePermission('inventory', 'view')
+  const { error, organizationId } = await requirePermission('inventory', 'view')
   if (error) return error
 
   const { searchParams } = new URL(req.url)
@@ -29,6 +30,7 @@ export async function GET(req: NextRequest) {
     params.push(s, s, s, s)
   }
   if (categoryId) { conditions.push('p.category_id = ?'); params.push(categoryId) }
+  appendOrgFilter(conditions, params, organizationId!, 'p')
   const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : ''
 
   try {
@@ -50,7 +52,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const { error } = await requirePermission('inventory', 'create')
+  const { error, organizationId } = await requirePermission('inventory', 'create')
   if (error) return error
   try {
     const body = await req.json()
@@ -58,11 +60,11 @@ export async function POST(req: NextRequest) {
     await ensureProductsDiscountColumn()
     const id = randomUUID()
     await db.execute(
-      `INSERT INTO products (id, name, sku, barcode, hsn_code, sac_code, description,
+      `INSERT INTO products (id, organization_id, name, sku, barcode, hsn_code, sac_code, description,
         category_id, brand_id, unit_id, purchase_price, selling_price, mrp,
         gst_rate, gst_type, opening_stock, current_stock, low_stock_alert, discount, is_active)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, data.name, data.sku || null, data.barcode || null, data.hsnCode || null, data.sacCode || null,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, organizationId, data.name, data.sku || null, data.barcode || null, data.hsnCode || null, data.sacCode || null,
        data.description || null, data.categoryId || null, data.brandId || null, data.unitId || null,
        data.purchasePrice, data.sellingPrice, data.mrp ?? null, data.gstRate, data.gstType,
        data.openingStock, data.openingStock, data.lowStockAlert, data.discount ?? null, data.isActive ? 1 : 0]
@@ -71,8 +73,8 @@ export async function POST(req: NextRequest) {
       `SELECT p.*, c.name as category_name, b.name as brand_name, u.name as unit_name
        FROM products p LEFT JOIN categories c ON p.category_id = c.id
        LEFT JOIN brands b ON p.brand_id = b.id LEFT JOIN units u ON p.unit_id = u.id
-       WHERE p.id = ?`,
-      [id]
+       WHERE p.id = ? AND p.organization_id = ?`,
+      [id, organizationId]
     ) as any[]
     return NextResponse.json(rows[0], { status: 201 })
   } catch (err: any) {

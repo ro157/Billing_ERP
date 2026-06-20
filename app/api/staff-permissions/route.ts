@@ -6,15 +6,20 @@ import { ensureStaffPermissionsSchema } from '@/lib/ensure-staff-permissions-sch
 import { STAFF_ASSIGNABLE_MODULES } from '@/lib/permissions'
 import { randomUUID } from 'crypto'
 
-async function listStaffWithPermissions() {
+async function listStaffWithPermissions(organizationId: string) {
   const [users] = await db.execute(
-    `SELECT id, name, email, role, status FROM users WHERE role = 'STAFF' ORDER BY name ASC`
+    `SELECT u.id, u.name, u.email, u.role, u.status
+     FROM organization_members om
+     JOIN users u ON u.id = om.user_id
+     WHERE om.organization_id = ? AND om.status = 'ACTIVE' AND u.role = 'STAFF'
+     ORDER BY u.name ASC`,
+    [organizationId]
   ) as any[]
 
   for (const user of users as any[]) {
     const [mods] = await db.execute(
-      'SELECT module FROM staff_module_permissions WHERE user_id = ? ORDER BY module ASC',
-      [user.id]
+      'SELECT module FROM staff_module_permissions WHERE user_id = ? AND organization_id = ? ORDER BY module ASC',
+      [user.id, organizationId]
     ) as any[]
     user.modules = mods.map((m: any) => m.module)
     user.moduleCount = user.modules.length
@@ -23,17 +28,27 @@ async function listStaffWithPermissions() {
   return users
 }
 
+async function isOrgStaff(userId: string, organizationId: string) {
+  const [rows] = await db.execute(
+    `SELECT u.id FROM organization_members om
+     JOIN users u ON u.id = om.user_id
+     WHERE om.organization_id = ? AND om.user_id = ? AND om.status = 'ACTIVE' AND u.role = 'STAFF'`,
+    [organizationId, userId]
+  ) as any[]
+  return !!rows[0]
+}
+
 export async function GET() {
-  const { error } = await requireAdmin()
+  const { error, organizationId } = await requireAdmin()
   if (error) return error
 
   await ensureStaffPermissionsSchema()
-  const staff = await listStaffWithPermissions()
+  const staff = await listStaffWithPermissions(organizationId!)
   return NextResponse.json(staff)
 }
 
 export async function POST(req: NextRequest) {
-  const { error } = await requireAdmin()
+  const { error, organizationId } = await requireAdmin()
   if (error) return error
 
   try {
@@ -41,11 +56,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const data = staffPermissionSchema.parse(body)
 
-    const [userRows] = await db.execute(
-      "SELECT id, role FROM users WHERE id = ? AND role = 'STAFF'",
-      [data.userId]
-    ) as any[]
-    if (!userRows[0]) {
+    if (!(await isOrgStaff(data.userId, organizationId!))) {
       return NextResponse.json({ error: 'Staff member not found' }, { status: 404 })
     }
 
@@ -53,17 +64,20 @@ export async function POST(req: NextRequest) {
       (STAFF_ASSIGNABLE_MODULES as readonly string[]).includes(m)
     )
 
-    await db.execute('DELETE FROM staff_module_permissions WHERE user_id = ?', [data.userId])
+    await db.execute(
+      'DELETE FROM staff_module_permissions WHERE user_id = ? AND organization_id = ?',
+      [data.userId, organizationId]
+    )
     for (const mod of validModules) {
       await db.execute(
-        'INSERT INTO staff_module_permissions (id, user_id, module) VALUES (?,?,?)',
-        [randomUUID(), data.userId, mod]
+        'INSERT INTO staff_module_permissions (id, user_id, organization_id, module) VALUES (?,?,?,?)',
+        [randomUUID(), data.userId, organizationId, mod]
       )
     }
 
     const [mods] = await db.execute(
-      'SELECT module FROM staff_module_permissions WHERE user_id = ? ORDER BY module ASC',
-      [data.userId]
+      'SELECT module FROM staff_module_permissions WHERE user_id = ? AND organization_id = ? ORDER BY module ASC',
+      [data.userId, organizationId]
     ) as any[]
 
     return NextResponse.json(

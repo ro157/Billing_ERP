@@ -10,16 +10,19 @@ const updateSchema = z.object({
   modules: z.array(z.string()),
 })
 
-async function getStaffPermission(userId: string) {
+async function getStaffPermission(userId: string, organizationId: string) {
   const [users] = await db.execute(
-    "SELECT id, name, email, role, status FROM users WHERE id = ? AND role = 'STAFF'",
-    [userId]
+    `SELECT u.id, u.name, u.email, u.role, u.status
+     FROM organization_members om
+     JOIN users u ON u.id = om.user_id
+     WHERE om.organization_id = ? AND om.user_id = ? AND om.status = 'ACTIVE' AND u.role = 'STAFF'`,
+    [organizationId, userId]
   ) as any[]
   if (!users[0]) return null
 
   const [mods] = await db.execute(
-    'SELECT module FROM staff_module_permissions WHERE user_id = ? ORDER BY module ASC',
-    [userId]
+    'SELECT module FROM staff_module_permissions WHERE user_id = ? AND organization_id = ? ORDER BY module ASC',
+    [userId, organizationId]
   ) as any[]
 
   return {
@@ -33,11 +36,11 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: { userId: string } }
 ) {
-  const { error } = await requireAdmin()
+  const { error, organizationId } = await requireAdmin()
   if (error) return error
 
   await ensureStaffPermissionsSchema()
-  const record = await getStaffPermission(params.userId)
+  const record = await getStaffPermission(params.userId, organizationId!)
   if (!record) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   return NextResponse.json(record)
 }
@@ -46,7 +49,7 @@ export async function PUT(
   req: NextRequest,
   { params }: { params: { userId: string } }
 ) {
-  const { error } = await requireAdmin()
+  const { error, organizationId } = await requireAdmin()
   if (error) return error
 
   try {
@@ -54,11 +57,8 @@ export async function PUT(
     const body = await req.json()
     const data = updateSchema.parse(body)
 
-    const [userRows] = await db.execute(
-      "SELECT id FROM users WHERE id = ? AND role = 'STAFF'",
-      [params.userId]
-    ) as any[]
-    if (!userRows[0]) {
+    const record = await getStaffPermission(params.userId, organizationId!)
+    if (!record) {
       return NextResponse.json({ error: 'Staff member not found' }, { status: 404 })
     }
 
@@ -66,16 +66,19 @@ export async function PUT(
       (STAFF_ASSIGNABLE_MODULES as readonly string[]).includes(m)
     )
 
-    await db.execute('DELETE FROM staff_module_permissions WHERE user_id = ?', [params.userId])
+    await db.execute(
+      'DELETE FROM staff_module_permissions WHERE user_id = ? AND organization_id = ?',
+      [params.userId, organizationId]
+    )
     for (const mod of validModules) {
       await db.execute(
-        'INSERT INTO staff_module_permissions (id, user_id, module) VALUES (?,?,?)',
-        [randomUUID(), params.userId, mod]
+        'INSERT INTO staff_module_permissions (id, user_id, organization_id, module) VALUES (?,?,?,?)',
+        [randomUUID(), params.userId, organizationId, mod]
       )
     }
 
-    const record = await getStaffPermission(params.userId)
-    return NextResponse.json(record)
+    const updated = await getStaffPermission(params.userId, organizationId!)
+    return NextResponse.json(updated)
   } catch (err: any) {
     if (err.name === 'ZodError') {
       return NextResponse.json({ error: 'Validation failed' }, { status: 400 })
@@ -88,18 +91,18 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: { userId: string } }
 ) {
-  const { error } = await requireAdmin()
+  const { error, organizationId } = await requireAdmin()
   if (error) return error
 
   await ensureStaffPermissionsSchema()
-  const [userRows] = await db.execute(
-    "SELECT id FROM users WHERE id = ? AND role = 'STAFF'",
-    [params.userId]
-  ) as any[]
-  if (!userRows[0]) {
+  const record = await getStaffPermission(params.userId, organizationId!)
+  if (!record) {
     return NextResponse.json({ error: 'Staff member not found' }, { status: 404 })
   }
 
-  await db.execute('DELETE FROM staff_module_permissions WHERE user_id = ?', [params.userId])
+  await db.execute(
+    'DELETE FROM staff_module_permissions WHERE user_id = ? AND organization_id = ?',
+    [params.userId, organizationId]
+  )
   return NextResponse.json({ success: true })
 }

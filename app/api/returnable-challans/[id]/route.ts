@@ -3,12 +3,12 @@ import db from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  const { error } = await requirePermission('returnable-challans', 'view')
+  const { error, organizationId } = await requirePermission('returnable-challans', 'view')
   if (error) return error
 
   const [rows] = await db.execute(
-    'SELECT rc.*, c.name as customer_name FROM returnable_challans rc LEFT JOIN customers c ON rc.customer_id = c.id WHERE rc.id = ?',
-    [params.id]
+    'SELECT rc.*, c.name as customer_name FROM returnable_challans rc LEFT JOIN customers c ON rc.customer_id = c.id WHERE rc.id = ? AND rc.organization_id = ?',
+    [params.id, organizationId]
   ) as any[]
   if (!rows[0]) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
@@ -17,14 +17,23 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 }
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
-  const { error } = await requirePermission('returnable-challans', 'edit')
+  const { error, organizationId } = await requirePermission('returnable-challans', 'edit')
   if (error) return error
   try {
     const { status, notes } = await req.json()
-    await db.execute('UPDATE returnable_challans SET status=COALESCE(?,status), notes=COALESCE(?,notes) WHERE id=?',
-      [status||null, notes||null, params.id])
+    const [existing] = await db.execute(
+      'SELECT id FROM returnable_challans WHERE id = ? AND organization_id = ?',
+      [params.id, organizationId]
+    ) as any[]
+    if (!existing[0]) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    await db.execute(
+      'UPDATE returnable_challans SET status=COALESCE(?,status), notes=COALESCE(?,notes) WHERE id=? AND organization_id = ?',
+      [status||null, notes||null, params.id, organizationId]
+    )
     const [rows] = await db.execute(
-      'SELECT rc.*, c.name as customer_name FROM returnable_challans rc LEFT JOIN customers c ON rc.customer_id = c.id WHERE rc.id = ?', [params.id]
+      'SELECT rc.*, c.name as customer_name FROM returnable_challans rc LEFT JOIN customers c ON rc.customer_id = c.id WHERE rc.id = ? AND rc.organization_id = ?',
+      [params.id, organizationId]
     ) as any[]
     return NextResponse.json(rows[0])
   } catch {
@@ -33,9 +42,16 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
-  const { error } = await requirePermission('returnable-challans', 'delete')
+  const { error, organizationId } = await requirePermission('returnable-challans', 'delete')
   if (error) return error
+
+  const [existing] = await db.execute(
+    'SELECT id FROM returnable_challans WHERE id = ? AND organization_id = ?',
+    [params.id, organizationId]
+  ) as any[]
+  if (!existing[0]) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
   await db.execute('DELETE FROM returnable_challan_items WHERE challan_id = ?', [params.id])
-  await db.execute('DELETE FROM returnable_challans WHERE id = ?', [params.id])
+  await db.execute('DELETE FROM returnable_challans WHERE id = ? AND organization_id = ?', [params.id, organizationId])
   return NextResponse.json({ success: true })
 }

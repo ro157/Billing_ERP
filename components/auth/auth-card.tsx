@@ -5,11 +5,12 @@ export const AUTH_CARD_CLASS = 'border-2 border-blue-600 shadow-md'
 interface AuthCardProps {
   title: string
   children: React.ReactNode
+  className?: string
 }
 
-export function AuthCard({ title, children }: AuthCardProps) {
+export function AuthCard({ title, children, className }: AuthCardProps) {
   return (
-    <div className="w-full max-w-md px-4">
+    <div className={className ? `w-full px-4 ${className}` : 'w-full max-w-md px-4'}>
       <Card className={AUTH_CARD_CLASS}>
         <CardHeader className="text-center pb-2">
           <CardTitle className="text-2xl font-semibold">{title}</CardTitle>

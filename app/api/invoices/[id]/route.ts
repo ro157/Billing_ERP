@@ -23,7 +23,8 @@ async function insertInvoiceItems(
   invoiceId: string,
   invoiceNo: string,
   itemsWithTotals: any[],
-  gstType: string
+  gstType: string,
+  organizationId: string
 ) {
   for (const item of itemsWithTotals) {
     await conn.execute(
@@ -38,10 +39,13 @@ async function insertInvoiceItems(
        item.cgst, item.sgst, item.igst, item.cgst + item.sgst + item.igst, item.total]
     )
     if (item.productId) {
-      await conn.execute('UPDATE products SET current_stock = current_stock - ? WHERE id = ?', [item.quantity, item.productId])
+      await conn.execute(
+        'UPDATE products SET current_stock = current_stock - ? WHERE id = ? AND organization_id = ?',
+        [item.quantity, item.productId, organizationId]
+      )
       const [[stockRow]] = await conn.execute(
-        'SELECT current_stock FROM products WHERE id = ?',
-        [item.productId]
+        'SELECT current_stock FROM products WHERE id = ? AND organization_id = ?',
+        [item.productId, organizationId]
       ) as any[][]
       await conn.execute(
         'INSERT INTO stock_movements (id, product_id, type, quantity, balance_after, reference_type, reference_id, note) VALUES (?,?,?,?,?,?,?,?)',
@@ -52,7 +56,7 @@ async function insertInvoiceItems(
 }
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  const { error } = await requirePermission('billing', 'view')
+  const { error, organizationId } = await requirePermission('billing', 'view')
   if (error) return error
 
   await ensureInvoiceSchema()
@@ -71,8 +75,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
        c.billing_pincode,
        c.shipping_address as customer_shipping_address,
        c.shipping_city as customer_shipping_city
-     FROM invoices i LEFT JOIN customers c ON i.customer_id = c.id WHERE i.id = ?`,
-    [params.id]
+     FROM invoices i LEFT JOIN customers c ON i.customer_id = c.id WHERE i.id = ? AND i.organization_id = ?`,
+    [params.id, organizationId]
   ) as any[]
   if (!rows[0]) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
@@ -89,7 +93,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 }
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
-  const { error } = await requirePermission('billing', 'edit')
+  const { error, organizationId } = await requirePermission('billing', 'edit')
   if (error) return error
 
   const conn = await db.getConnection()
@@ -98,7 +102,10 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     const body = await req.json()
 
     if (!body.items || !Array.isArray(body.items)) {
-      const [rows] = await conn.execute('SELECT * FROM invoices WHERE id = ?', [params.id]) as any[]
+      const [rows] = await conn.execute(
+        'SELECT * FROM invoices WHERE id = ? AND organization_id = ?',
+        [params.id, organizationId]
+      ) as any[]
       if (!rows[0]) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
       const { paidAmount, paymentMode, notes } = body
@@ -108,13 +115,13 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       await conn.execute(
         `UPDATE invoices SET paid_amount = ?, balance_amount = ?,
           payment_mode = COALESCE(?, payment_mode), notes = COALESCE(?, notes)
-         WHERE id = ?`,
-        [paid, balance, paymentMode || null, notes || null, params.id]
+         WHERE id = ? AND organization_id = ?`,
+        [paid, balance, paymentMode || null, notes || null, params.id, organizationId]
       )
 
       const [updated] = await db.execute(
-        'SELECT i.*, c.name as customer_name FROM invoices i LEFT JOIN customers c ON i.customer_id = c.id WHERE i.id = ?',
-        [params.id]
+        'SELECT i.*, c.name as customer_name FROM invoices i LEFT JOIN customers c ON i.customer_id = c.id WHERE i.id = ? AND i.organization_id = ?',
+        [params.id, organizationId]
       ) as any[]
       return NextResponse.json(updated[0])
     }
@@ -122,7 +129,10 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     const data = invoiceSchema.parse(body)
     const gstType = data.gstType
 
-    const [existingRows] = await conn.execute('SELECT * FROM invoices WHERE id = ?', [params.id]) as any[]
+    const [existingRows] = await conn.execute(
+      'SELECT * FROM invoices WHERE id = ? AND organization_id = ?',
+      [params.id, organizationId]
+    ) as any[]
     if (!existingRows[0]) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     const existing = existingRows[0]
@@ -133,7 +143,10 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     const [oldItems] = await conn.execute('SELECT * FROM invoice_items WHERE invoice_id = ?', [params.id]) as any[]
     for (const item of oldItems as any[]) {
       if (item.product_id) {
-        await conn.execute('UPDATE products SET current_stock = current_stock + ? WHERE id = ?', [item.quantity, item.product_id])
+        await conn.execute(
+          'UPDATE products SET current_stock = current_stock + ? WHERE id = ? AND organization_id = ?',
+          [item.quantity, item.product_id, organizationId]
+        )
       }
     }
     await conn.execute('DELETE FROM stock_movements WHERE reference_type = ? AND reference_id = ?', ['INVOICE', params.id])
@@ -163,19 +176,19 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       `UPDATE invoices SET customer_id=?, date=?, due_date=?, gst_type=?, place_of_supply=?,
         subtotal=?, discount_amount=?, cgst_amount=?, sgst_amount=?, igst_amount=?, tax_amount=?, total_amount=?,
         paid_amount=?, balance_amount=?, payment_mode=?, notes=?, terms=?, party_details=?
-       WHERE id=?`,
+       WHERE id=? AND organization_id = ?`,
       [data.customerId, data.date, data.dueDate || null, gstType, data.placeOfSupply || null,
        roundToTwo(subtotal), roundToTwo(totalDiscount), roundToTwo(totalCgst), roundToTwo(totalSgst), roundToTwo(totalIgst), taxAmount, totalAmount,
        paidAmount, balanceAmount, data.paymentMode || null, data.notes || null, data.terms || null, partyDetailsJson,
-       params.id]
+       params.id, organizationId]
     )
 
-    await insertInvoiceItems(conn, params.id, invoiceNo, itemsWithTotals, gstType)
+    await insertInvoiceItems(conn, params.id, invoiceNo, itemsWithTotals, gstType, organizationId!)
 
     await conn.commit()
     const [rows] = await db.execute(
-      'SELECT i.*, c.name as customer_name FROM invoices i LEFT JOIN customers c ON i.customer_id = c.id WHERE i.id = ?',
-      [params.id]
+      'SELECT i.*, c.name as customer_name FROM invoices i LEFT JOIN customers c ON i.customer_id = c.id WHERE i.id = ? AND i.organization_id = ?',
+      [params.id, organizationId]
     ) as any[]
     return NextResponse.json(rows[0])
   } catch (err: any) {
@@ -189,21 +202,30 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
-  const { error } = await requirePermission('billing', 'delete')
+  const { error, organizationId } = await requirePermission('billing', 'delete')
   if (error) return error
 
   const conn = await db.getConnection()
   try {
+    const [existing] = await conn.execute(
+      'SELECT id FROM invoices WHERE id = ? AND organization_id = ?',
+      [params.id, organizationId]
+    ) as any[]
+    if (!existing[0]) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
     await conn.beginTransaction()
     const [items] = await conn.execute('SELECT * FROM invoice_items WHERE invoice_id = ?', [params.id]) as any[]
     for (const item of items as any[]) {
       if (item.product_id) {
-        await conn.execute('UPDATE products SET current_stock = current_stock + ? WHERE id = ?', [item.quantity, item.product_id])
+        await conn.execute(
+          'UPDATE products SET current_stock = current_stock + ? WHERE id = ? AND organization_id = ?',
+          [item.quantity, item.product_id, organizationId]
+        )
       }
     }
     await conn.execute('DELETE FROM invoice_items WHERE invoice_id = ?', [params.id])
     await conn.execute('DELETE FROM payments WHERE reference_id = ? AND type = ?', [params.id, 'INVOICE'])
-    await conn.execute('DELETE FROM invoices WHERE id = ?', [params.id])
+    await conn.execute('DELETE FROM invoices WHERE id = ? AND organization_id = ?', [params.id, organizationId])
     await conn.commit()
     return NextResponse.json({ success: true })
   } catch {

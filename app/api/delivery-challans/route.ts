@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import db from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
+import { appendOrgFilter } from '@/lib/tenant'
 import { challanSchema } from '@/lib/validations'
 import { randomUUID } from 'crypto'
 
 export async function GET(req: NextRequest) {
-  const { error } = await requirePermission('delivery-challans', 'view')
+  const { error, organizationId } = await requirePermission('delivery-challans', 'view')
   if (error) return error
 
   const { searchParams } = new URL(req.url)
@@ -19,6 +20,7 @@ export async function GET(req: NextRequest) {
   const params: any[] = []
   if (search) { conditions.push('(dc.challan_no LIKE ? OR c.name LIKE ?)'); const s = `%${search}%`; params.push(s, s) }
   if (status) { conditions.push('dc.status = ?'); params.push(status) }
+  appendOrgFilter(conditions, params, organizationId!, 'dc')
 
   const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''
   const [rows] = await db.execute(
@@ -34,7 +36,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const { error } = await requirePermission('delivery-challans', 'create')
+  const { error, organizationId } = await requirePermission('delivery-challans', 'create')
   if (error) return error
 
   const conn = await db.getConnection()
@@ -43,10 +45,14 @@ export async function POST(req: NextRequest) {
     const data = challanSchema.parse(body)
     await conn.beginTransaction()
 
-    const [settings] = await conn.execute('SELECT challan_prefix FROM business_settings LIMIT 1') as any[]
+    const [settings] = await conn.execute(
+      'SELECT challan_prefix FROM business_settings WHERE organization_id = ? LIMIT 1',
+      [organizationId]
+    ) as any[]
     const prefix = settings[0]?.challan_prefix || 'DC'
     const [last] = await conn.execute(
-      'SELECT challan_no FROM delivery_challans WHERE challan_no LIKE ? ORDER BY created_at DESC LIMIT 1', [`${prefix}%`]
+      'SELECT challan_no FROM delivery_challans WHERE organization_id = ? AND challan_no LIKE ? ORDER BY created_at DESC LIMIT 1',
+      [organizationId, `${prefix}%`]
     ) as any[]
     let nextNum = 1
     if (last[0]) { const m = last[0].challan_no.match(/\d+$/); if (m) nextNum = parseInt(m[0]) + 1 }
@@ -54,14 +60,17 @@ export async function POST(req: NextRequest) {
 
     const id = randomUUID()
     await conn.execute(
-      'INSERT INTO delivery_challans (id, challan_no, customer_id, date, vehicle_no, notes, status) VALUES (?,?,?,?,?,?,?)',
-      [id, challanNo, data.customerId, data.date, data.vehicleNo || null, data.notes || null, 'PENDING']
+      'INSERT INTO delivery_challans (id, organization_id, challan_no, customer_id, date, vehicle_no, notes, status) VALUES (?,?,?,?,?,?,?,?)',
+      [id, organizationId, challanNo, data.customerId, data.date, data.vehicleNo || null, data.notes || null, 'PENDING']
     )
 
     for (const item of data.items) {
       let productName = item.description || 'Item'
       if (item.productId) {
-        const [prod] = await conn.execute('SELECT name FROM products WHERE id = ?', [item.productId]) as any[]
+        const [prod] = await conn.execute(
+          'SELECT name FROM products WHERE id = ? AND organization_id = ?',
+          [item.productId, organizationId]
+        ) as any[]
         if (prod[0]) productName = prod[0].name
       }
       await conn.execute(
@@ -75,7 +84,8 @@ export async function POST(req: NextRequest) {
 
     await conn.commit()
     const [rows] = await db.execute(
-      'SELECT dc.*, c.name as customer_name FROM delivery_challans dc LEFT JOIN customers c ON dc.customer_id = c.id WHERE dc.id = ?', [id]
+      'SELECT dc.*, c.name as customer_name FROM delivery_challans dc LEFT JOIN customers c ON dc.customer_id = c.id WHERE dc.id = ? AND dc.organization_id = ?',
+      [id, organizationId]
     ) as any[]
     return NextResponse.json(rows[0], { status: 201 })
   } catch (err: any) {
