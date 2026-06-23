@@ -10,6 +10,7 @@ import {
   Users,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { AuthLightMode } from '@/components/auth/auth-light-mode'
 import { RegisterSlidePanel } from '@/components/landing/register-slide-panel'
 
 const APP_NAME = 'Viros GST Billing'
@@ -47,6 +48,7 @@ export function WelcomePage() {
 
   return (
     <>
+      <AuthLightMode />
       <div className="min-h-screen flex flex-col bg-gradient-to-br from-blue-200 via-blue-300 to-indigo-400">
         <main className="flex-1">
           <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
@@ -81,17 +83,23 @@ export function WelcomePage() {
               </div>
             </div>
 
-            <div className="mt-40 grid gap-6 sm:mt-52 sm:grid-cols-2 lg:mt-64 lg:grid-cols-3">
+            <div className="mt-12 grid grid-cols-1 gap-4 sm:mt-16 sm:grid-cols-2 sm:gap-5 lg:mt-20 lg:grid-cols-3 lg:gap-6">
               {features.map((feature) => (
                 <div
                   key={feature.title}
-                  className="rounded-xl border border-white/40 bg-white/70 p-6 shadow-sm backdrop-blur-sm transition-shadow hover:shadow-md"
+                  className="rounded-xl border border-white/50 bg-white/85 p-4 shadow-sm backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:border-blue-200/60 hover:shadow-md sm:p-5"
                 >
-                  <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-lg bg-blue-600 text-white">
-                    <feature.icon className="h-5 w-5" />
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white shadow-md shadow-blue-600/25 sm:h-11 sm:w-11">
+                      <feature.icon className="h-5 w-5" />
+                    </div>
+                    <h3 className="min-w-0 flex-1 text-base font-semibold leading-snug text-slate-900 sm:text-lg">
+                      {feature.title}
+                    </h3>
                   </div>
-                  <h3 className="text-lg font-semibold text-slate-900">{feature.title}</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-slate-600">{feature.description}</p>
+                  <p className="mt-3 text-sm leading-relaxed text-slate-600 sm:mt-3.5">
+                    {feature.description}
+                  </p>
                 </div>
               ))}
             </div>

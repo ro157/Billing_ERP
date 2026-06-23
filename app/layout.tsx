@@ -21,7 +21,7 @@ export default function RootLayout({
       <head>
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var s=localStorage.getItem('app-store');if(s){var d=JSON.parse(s);if(d.state&&d.state.colorMode==='dark')document.documentElement.classList.add('dark')}}catch(e){}})();`,
+            __html: `(function(){try{var p=window.location.pathname;var lightOnly=p==='/'||['/login','/register','/forgot-password','/reset-password','/verify-otp'].indexOf(p)!==-1;if(lightOnly){document.documentElement.classList.remove('dark');return;}var s=localStorage.getItem('app-store');if(s){var d=JSON.parse(s);if(d.state&&d.state.colorMode==='dark')document.documentElement.classList.add('dark')}}catch(e){}})();`,
           }}
         />
       </head>
