@@ -50,7 +50,6 @@ export default withAuth(
               'delivery-challans': '/delivery-challans',
               'returnable-challans': '/returnable-challans',
               reports: '/reports',
-              'gst-reports': '/gst-reports',
             }
             const redirectTo = redirectMap[allowedModule] || '/login'
             return NextResponse.redirect(new URL(redirectTo, req.url))
@@ -88,7 +87,6 @@ export const config = {
     '/delivery-challans/:path*',
     '/returnable-challans/:path*',
     '/reports/:path*',
-    '/gst-reports/:path*',
     '/staff/:path*',
     '/roles/:path*',
     '/settings/:path*',

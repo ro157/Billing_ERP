@@ -138,12 +138,6 @@ function LoginForm() {
           <Link href="/forgot-password" className="text-sm text-primary hover:underline">
             Forgot your password?
           </Link>
-          <p className="text-sm text-muted-foreground text-center">
-            New organisation?{' '}
-            <Link href="/register" className="text-primary hover:underline">
-              Register Organisation
-            </Link>
-          </p>
         </CardFooter>
       </form>
     </AuthCard>

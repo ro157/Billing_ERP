@@ -16,4 +16,15 @@ if (process.env.NODE_ENV !== 'production') {
   globalForDb.mysqlPool = pool
 }
 
+export function isDbConnectionError(error: unknown): boolean {
+  const err = error as { code?: string; errno?: number }
+  return (
+    err?.code === 'ECONNREFUSED' ||
+    err?.code === 'ENOTFOUND' ||
+    err?.code === 'ETIMEDOUT' ||
+    err?.code === 'PROTOCOL_CONNECTION_LOST' ||
+    err?.errno === -4078
+  )
+}
+
 export default pool

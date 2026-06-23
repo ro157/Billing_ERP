@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 
 export type ConsoleMessageType = 'error' | 'success'
 
-export const CONSOLE_MESSAGE_DURATION_MS = 2000
+export const CONSOLE_MESSAGE_DURATION_MS = 1000
 
 interface ConsoleMessageProps {
   type: ConsoleMessageType

@@ -140,7 +140,6 @@ export const PERMISSION_MODULES = [
   'delivery-challans',
   'returnable-challans',
   'reports',
-  'gst-reports',
   'staff',
   'roles',
   'settings',

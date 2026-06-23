@@ -1,5 +1,5 @@
 {
-  "name": "Viros-gst-billing",
+  "name": "BaseBilling",
   "version": "1.0.0",
   "private": true,
   "scripts": {

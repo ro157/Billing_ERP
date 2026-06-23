@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
-import db from '@/lib/db'
+import db, { isDbConnectionError } from '@/lib/db'
 import { authOptions } from '@/lib/auth'
 import { ensureBusinessSettingsBankingColumns } from '@/lib/ensure-business-settings-schema'
 import { normalizeSidebarColor, DEFAULT_SIDEBAR_COLOR } from '@/lib/theme'
@@ -45,7 +45,13 @@ export async function GET() {
       sidebarColor: normalizeSidebarColor(row?.sidebarColor),
     })
   } catch (error) {
-    console.error('Error fetching auth branding:', error)
+    if (isDbConnectionError(error)) {
+      console.warn(
+        'Database unavailable for branding; using defaults. Start XAMPP MySQL on port 3306.'
+      )
+    } else {
+      console.error('Error fetching auth branding:', error)
+    }
     return NextResponse.json({
       companyName: 'Viros GST Billing',
       logo: null,

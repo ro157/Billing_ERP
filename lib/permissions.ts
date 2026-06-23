@@ -13,7 +13,6 @@ export const STAFF_ASSIGNABLE_MODULES = [
   'delivery-challans',
   'returnable-challans',
   'reports',
-  'gst-reports',
 ] as const
 
 export type StaffModule = (typeof STAFF_ASSIGNABLE_MODULES)[number]
@@ -30,7 +29,6 @@ export const PATH_MODULE_MAP: { prefix: string; module: string }[] = [
   { prefix: '/delivery-challans', module: 'delivery-challans' },
   { prefix: '/returnable-challans', module: 'returnable-challans' },
   { prefix: '/reports', module: 'reports' },
-  { prefix: '/gst-reports', module: 'gst-reports' },
 ]
 
 export function moduleFromPath(path: string): string | null {
@@ -52,7 +50,6 @@ const MODULE_DISPLAY_TITLES: Record<string, string> = {
   'delivery-challans': 'Delivery Challans',
   'returnable-challans': 'Returnable Challans',
   reports: 'Reports',
-  'gst-reports': 'GST Reports',
   staff: 'Staff',
   roles: 'Staff Permissions',
   settings: 'Settings',
