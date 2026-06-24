@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -115,19 +115,34 @@ export default function StaffPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-end">
-        <Button onClick={openNew}><Plus className="w-4 h-4 mr-2" />Add Staff</Button>
+    <div className="space-y-4 md:space-y-6 min-w-0 pb-20 md:pb-0">
+      <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-3">
+        <div className="relative flex-1 min-w-0">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+          <Input
+            placeholder="Search staff..."
+            className="pl-9 h-9 w-full bg-background"
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+          />
+        </div>
+        <Button onClick={openNew} className="hidden md:inline-flex h-9 shrink-0">
+          <Plus className="w-4 h-4 mr-2" />
+          Add Staff
+        </Button>
       </div>
 
-      <Card><CardContent className="p-4">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input placeholder="Search staff..." className="pl-9" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
-        </div>
-      </CardContent></Card>
+      <Button
+        type="button"
+        onClick={openNew}
+        size="icon"
+        aria-label="Add Staff"
+        className="md:hidden fixed bottom-6 right-6 z-50 h-14 w-14 rounded-full shadow-lg"
+      >
+        <Plus className="h-6 w-6" />
+      </Button>
 
-      <Card>
+      <Card className="overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>

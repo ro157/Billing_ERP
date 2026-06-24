@@ -8,8 +8,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
-import { Download, FileSpreadsheet, FileText, Search } from 'lucide-react'
+import { FileSpreadsheet, Search } from 'lucide-react'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { usePageCount } from '@/hooks/use-page-count'
 
 const REPORT_TYPES = [
   { value: 'sales-summary', label: 'Sales Summary' },
@@ -23,6 +24,7 @@ const REPORT_TYPES = [
 ]
 
 export default function ReportsPage() {
+  usePageCount('Generate and export business reports')
   const [reportType, setReportType] = useState('sales-summary')
   const [from, setFrom] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0])
   const [to, setTo] = useState(new Date().toISOString().split('T')[0])
@@ -193,43 +195,117 @@ export default function ReportsPage() {
     return null
   }
 
-  return (
-    <div className="space-y-6">
-      <div>
-        <p className="text-muted-foreground">Generate and export business reports</p>
-      </div>
+  const showDateRange = !['stock-report', 'low-stock'].includes(reportType)
 
+  return (
+    <div className="space-y-4 md:space-y-6 min-w-0">
       <Card>
-        <CardHeader><CardTitle>Report Filters</CardTitle></CardHeader>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Report Filters</CardTitle>
+        </CardHeader>
         <CardContent>
-          <div className="flex flex-wrap gap-4 items-end">
-            <div className="space-y-2 w-48">
+          {/* Mobile: dates → report type + run button */}
+          <div className="flex flex-col gap-4 md:hidden">
+            {showDateRange && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2 min-w-0">
+                  <Label>From</Label>
+                  <Input
+                    type="date"
+                    value={from}
+                    onChange={(e) => setFrom(e.target.value)}
+                    className="h-9 w-full min-w-0"
+                  />
+                </div>
+                <div className="space-y-2 min-w-0">
+                  <Label>To</Label>
+                  <Input
+                    type="date"
+                    value={to}
+                    onChange={(e) => setTo(e.target.value)}
+                    className="h-9 w-full min-w-0"
+                  />
+                </div>
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-3 items-end">
+              <div className="space-y-2 min-w-0">
+                <Label>Report Type</Label>
+                <Select value={reportType} onValueChange={setReportType}>
+                  <SelectTrigger className="h-9 w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {REPORT_TYPES.map((r) => (
+                      <SelectItem key={r.value} value={r.value}>
+                        {r.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button onClick={fetchReport} disabled={loading} className="h-9 w-full">
+                <Search className="w-4 h-4 mr-2 shrink-0" />
+                <span className="truncate">{loading ? 'Loading...' : 'Run Report'}</span>
+              </Button>
+            </div>
+            {data.length > 0 && (
+              <Button variant="outline" onClick={exportExcel} className="h-9 w-full">
+                <FileSpreadsheet className="w-4 h-4 mr-2" />
+                Export Excel
+              </Button>
+            )}
+          </div>
+
+          {/* Desktop: single row */}
+          <div className="hidden md:flex md:flex-row md:items-end md:gap-3">
+            <div className="space-y-2 flex-1 max-w-xs min-w-0">
               <Label>Report Type</Label>
               <Select value={reportType} onValueChange={setReportType}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger className="h-9 w-full">
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
-                  {REPORT_TYPES.map(r => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}
+                  {REPORT_TYPES.map((r) => (
+                    <SelectItem key={r.value} value={r.value}>
+                      {r.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
-            {!['stock-report', 'low-stock'].includes(reportType) && (
+
+            {showDateRange && (
               <>
-                <div className="space-y-2">
+                <div className="space-y-2 w-40">
                   <Label>From</Label>
-                  <Input type="date" value={from} onChange={e => setFrom(e.target.value)} className="w-40" />
+                  <Input
+                    type="date"
+                    value={from}
+                    onChange={(e) => setFrom(e.target.value)}
+                    className="h-9 w-full"
+                  />
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-2 w-40">
                   <Label>To</Label>
-                  <Input type="date" value={to} onChange={e => setTo(e.target.value)} className="w-40" />
+                  <Input
+                    type="date"
+                    value={to}
+                    onChange={(e) => setTo(e.target.value)}
+                    className="h-9 w-full"
+                  />
                 </div>
               </>
             )}
-            <Button onClick={fetchReport} disabled={loading}>
-              <Search className="w-4 h-4 mr-2" />{loading ? 'Loading...' : 'Run Report'}
+
+            <Button onClick={fetchReport} disabled={loading} className="h-9 shrink-0">
+              <Search className="w-4 h-4 mr-2" />
+              {loading ? 'Loading...' : 'Run Report'}
             </Button>
             {data.length > 0 && (
-              <Button variant="outline" onClick={exportExcel}>
-                <FileSpreadsheet className="w-4 h-4 mr-2" />Export Excel
+              <Button variant="outline" onClick={exportExcel} className="h-9 shrink-0">
+                <FileSpreadsheet className="w-4 h-4 mr-2" />
+                Export Excel
               </Button>
             )}
           </div>
