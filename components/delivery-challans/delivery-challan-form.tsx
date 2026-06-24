@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { DocumentPartyCard } from '@/components/shared/document-party-card'
 import { DocumentTermsField } from '@/components/shared/document-terms-field'
@@ -18,7 +19,8 @@ import { challanSchema, type ChallanInput } from '@/lib/validations'
 import type { PartyCustomer, PartyFields } from '@/lib/party-fields'
 import { parseQuotationPartyDetails } from '@/lib/quotation-party'
 import { FormPageLoader } from '@/components/layout/page-loader'
-import { cn } from '@/lib/utils'
+import { formatCurrency, GST_RATES, roundToTwo, cn } from '@/lib/utils'
+import { computeSalesDocumentLineTotals, normalizeProductDiscountPercent } from '@/lib/sales-document-totals'
 import { Plus, Trash2, ArrowLeft, Package } from 'lucide-react'
 import Link from 'next/link'
 
@@ -26,6 +28,9 @@ interface Product {
   id: string
   name: string
   description?: string | null
+  selling_price: number
+  gst_rate: number
+  discount?: number | string | null
   hsn_code?: string | null
   sac_code?: string | null
   current_stock?: number
@@ -46,8 +51,24 @@ const defaultItem: ChallanInput['items'][number] = {
   description: '',
   quantity: 1,
   rate: 0,
+  discount: 0,
   gstRate: 0,
   unit: '',
+}
+
+function computeChallanLineTotals(
+  qty: number,
+  rate: number,
+  discountPercent: number,
+  gstRate: number
+) {
+  const line = computeSalesDocumentLineTotals(qty, rate, discountPercent, gstRate, 'CGST_SGST')
+  return {
+    taxableGross: line.taxableGross,
+    discountAmount: line.discountAmount,
+    gst: line.gst,
+    finalAmount: line.finalAmount,
+  }
 }
 
 const readOnlyInputClass = 'h-9 bg-muted/60 cursor-default'
@@ -180,12 +201,14 @@ export function DeliveryChallanForm({ mode, challanId }: DeliveryChallanFormProp
           description?: string | null
           quantity: number
           rate?: number
+          discount?: number
           gst_rate?: number
         }) => ({
           productId: item.product_id || '',
           description: item.description || '',
           quantity: Number(item.quantity) || 1,
           rate: Number(item.rate) || 0,
+          discount: Number(item.discount) || 0,
           gstRate: Number(item.gst_rate) || 0,
           unit: 'Nos',
         }))
@@ -295,6 +318,9 @@ export function DeliveryChallanForm({ mode, challanId }: DeliveryChallanFormProp
     }
     setValue(`items.${index}.productId`, productId, { shouldValidate: true })
     setValue(`items.${index}.description`, p.description || p.name)
+    setValue(`items.${index}.rate`, Number(p.selling_price) || 0)
+    setValue(`items.${index}.gstRate`, Number(p.gst_rate) || 0)
+    setValue(`items.${index}.discount`, normalizeProductDiscountPercent(p.discount))
     setValue(`items.${index}.unit`, p.unit_short_name || 'Nos')
     setItemMeta((prev) => ({
       ...prev,
@@ -314,7 +340,7 @@ export function DeliveryChallanForm({ mode, challanId }: DeliveryChallanFormProp
   }
 
   const addProductCard = () => {
-    append({ productId: '', description: '', quantity: 1, rate: 0, gstRate: 0, unit: '' })
+    append({ productId: '', description: '', quantity: 1, rate: 0, discount: 0, gstRate: 0, unit: '' })
   }
 
   const handleBuyerNameChange = (value: string) => {
@@ -455,8 +481,16 @@ export function DeliveryChallanForm({ mode, challanId }: DeliveryChallanFormProp
           </CardHeader>
           <CardContent className="p-0">
             {fields.map((field, i) => {
+              const item = items?.[i]
               const meta = itemMeta[field.id] || { hsnSac: '', productName: '', listOpen: false }
               const filteredProducts = getFilteredProducts(i, meta.productName)
+
+              const line = computeChallanLineTotals(
+                item?.quantity || 0,
+                item?.rate || 0,
+                item?.discount || 0,
+                item?.gstRate || 0
+              )
 
               return (
                 <div key={field.id} className={cn(i > 0 && 'border-t border-muted-foreground/20')}>
@@ -562,11 +596,65 @@ export function DeliveryChallanForm({ mode, challanId }: DeliveryChallanFormProp
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-xs">Unit</Label>
+                        <Label className="text-xs">Rate *</Label>
                         <Input
-                          className="h-9"
-                          placeholder="Nos"
-                          {...register(`items.${i}.unit`)}
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          className="h-9 no-spinner"
+                          {...register(`items.${i}.rate`, { valueAsNumber: true })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs">Taxable Amt.</Label>
+                        <Input
+                          readOnly
+                          tabIndex={-1}
+                          value={formatCurrency(line.taxableGross)}
+                          className={readOnlyInputClass}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs">GST %</Label>
+                        <Select
+                          value={String(item?.gstRate ?? 0)}
+                          onValueChange={(v) => setValue(`items.${i}.gstRate`, parseFloat(v))}
+                        >
+                          <SelectTrigger className="h-9">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {GST_RATES.map((r) => (
+                              <SelectItem key={r} value={String(r)}>
+                                {r}%
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs">Discount %</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.01"
+                          className="h-9 no-spinner"
+                          value={Number.isFinite(item?.discount) ? item.discount : ''}
+                          onChange={(e) => {
+                            const raw = e.target.value
+                            const num = raw === '' ? 0 : Math.min(100, Math.max(0, roundToTwo(parseFloat(raw) || 0)))
+                            setValue(`items.${i}.discount`, num, { shouldDirty: true })
+                          }}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs">Amount</Label>
+                        <Input
+                          readOnly
+                          tabIndex={-1}
+                          value={formatCurrency(line.finalAmount)}
+                          className={cn(readOnlyInputClass, 'font-semibold')}
                         />
                       </div>
                     </div>

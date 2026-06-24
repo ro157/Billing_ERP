@@ -105,7 +105,24 @@ export interface InvoicePdfData {
   items: QuotationPdfItem[]
 }
 
-type SalesDocumentKind = 'quotation' | 'invoice'
+export interface DeliveryChallanPdfData {
+  challan_no: string
+  date: string
+  completion_date?: string | null
+  subtotal: number
+  discount_amount: number
+  tax_amount: number
+  round_off?: number
+  total_amount: number
+  gst_type?: string | null
+  terms?: string | null
+  notes?: string | null
+  customer: QuotationPdfCustomer
+  consignee?: QuotationPdfCustomer
+  items: QuotationPdfItem[]
+}
+
+type SalesDocumentKind = 'quotation' | 'invoice' | 'delivery-challan'
 
 type SalesDocumentRenderOptions = {
   copyLabel?: string
@@ -275,10 +292,38 @@ function getInvoiceMetaFields(invoice: InvoicePdfData): LabeledLine[] {
   return lines
 }
 
-function getDocumentMetaFields(kind: SalesDocumentKind, data: QuotationPdfData | InvoicePdfData): LabeledLine[] {
-  return kind === 'invoice'
-    ? getInvoiceMetaFields(data as InvoicePdfData)
-    : getQuotationMetaFields(data as QuotationPdfData)
+function getDeliveryChallanMetaFields(challan: DeliveryChallanPdfData): LabeledLine[] {
+  const lines: LabeledLine[] = [
+    { label: 'Challan No.', value: challan.challan_no, valueBold: true },
+    { label: 'Challan Date', value: formatPdfDate(challan.date), valueBold: true },
+  ]
+  if (challan.completion_date) {
+    lines.push({
+      label: 'Completion Date',
+      value: formatPdfDate(challan.completion_date),
+      valueBold: true,
+    })
+  }
+  return lines
+}
+
+function getDocumentMetaFields(
+  kind: SalesDocumentKind,
+  data: QuotationPdfData | InvoicePdfData | DeliveryChallanPdfData
+): LabeledLine[] {
+  if (kind === 'invoice') return getInvoiceMetaFields(data as InvoicePdfData)
+  if (kind === 'delivery-challan') return getDeliveryChallanMetaFields(data as DeliveryChallanPdfData)
+  return getQuotationMetaFields(data as QuotationPdfData)
+}
+
+function usesInvoiceStyleFooter(kind: SalesDocumentKind): boolean {
+  return kind === 'invoice' || kind === 'delivery-challan'
+}
+
+function getDocumentTitle(kind: SalesDocumentKind): string {
+  if (kind === 'invoice') return 'Tax Invoice'
+  if (kind === 'delivery-challan') return 'Delivery Challan'
+  return 'Quotation'
 }
 
 function resolveDocumentGstType(
@@ -377,7 +422,7 @@ function getFooterMainH(
   leftW: number
 ): number {
   const leftBodyH =
-    kind === 'invoice'
+    usesInvoiceStyleFooter(kind)
       ? estimateInvoiceTermsBodyH(doc, termsText, leftW)
       : FOOTER_BANK_BODY_H
   const leftH = FOOTER_WORDS_H + leftBodyH
@@ -411,7 +456,7 @@ function computeFooterLayout(
   let termLines: string[] = []
   let termsBlockH = 0
 
-  if (kind === 'invoice') {
+  if (usesInvoiceStyleFooter(kind)) {
     termLines = formatTermLinesForPdf(termsText)
   } else {
     termLines = termsText
@@ -650,7 +695,7 @@ function drawQuotationFooter(
   const wordLines = doc.splitTextToSize(words, leftW - pad * 2)
   doc.text(wordLines.slice(0, 2), bodyLeft + leftW / 2, top + 7.5, { align: 'center' })
 
-  if (kind === 'invoice') {
+  if (usesInvoiceStyleFooter(kind)) {
     drawInvoiceTermsBlock(doc, bodyLeft, splitX, leftW, bankTop, bankH, layout.termLines, pad)
   } else {
     // Left — Bank details + QR (quotations only)
@@ -720,7 +765,7 @@ function drawQuotationFooter(
 
   // Terms & Condition (full width below main footer — quotations only)
   const termsText = (document.terms || settings.termsCondition)?.trim()
-  if (kind !== 'invoice' && termsText && layout.termsBlockH > 0) {
+  if (!usesInvoiceStyleFooter(kind) && termsText && layout.termsBlockH > 0) {
     doc.rect(bodyLeft, layout.termsTop, contentW, layout.termsBlockH, 'FD')
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(7)
@@ -782,7 +827,7 @@ function renderSalesDocumentPage(
   doc.setFontSize(12)
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(...QUOTATION_TITLE_BLUE)
-  doc.text(kind === 'invoice' ? 'Tax Invoice' : 'Quotation', pageW / 2, titleMidY, { align: 'center' })
+  doc.text(getDocumentTitle(kind), pageW / 2, titleMidY, { align: 'center' })
 
   doc.setFontSize(6.5)
   doc.setTextColor(...TEXT)
@@ -802,7 +847,10 @@ function renderSalesDocumentPage(
 
   const buyerFields = getPartyFields(document.customer, false)
   const consigneeFields = getPartyFields(consigneeParty, true)
-  const metaFields = getDocumentMetaFields(kind, document as QuotationPdfData & InvoicePdfData)
+  const metaFields = getDocumentMetaFields(
+    kind,
+    document as QuotationPdfData & InvoicePdfData & DeliveryChallanPdfData
+  )
   const detailsRowHeight = Math.max(
     estimateLabeledBlockHeight(doc, buyerFields, textW),
     estimateLabeledBlockHeight(doc, consigneeFields, textW),
@@ -1124,6 +1172,27 @@ export function generateInvoicePdfBuffer(
   pages.forEach((copy, index) => {
     if (index > 0) doc.addPage()
     renderSalesDocumentPage(doc, 'invoice', invoice, settings, invoice.gst_type, {
+      copyLabel: INVOICE_COPY_LABELS[copy],
+      pageNumber: index + 1,
+      totalPages: pages.length,
+    })
+  })
+
+  return doc.output('arraybuffer')
+}
+
+export function generateDeliveryChallanPdfBuffer(
+  challan: DeliveryChallanPdfData,
+  settings: QuotationPdfSettings,
+  copies: InvoiceCopyType[] = ['original']
+): ArrayBuffer {
+  const selected = INVOICE_COPY_TYPES.filter((copy) => copies.includes(copy))
+  const pages = selected.length > 0 ? selected : (['original'] as InvoiceCopyType[])
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' })
+
+  pages.forEach((copy, index) => {
+    if (index > 0) doc.addPage()
+    renderSalesDocumentPage(doc, 'delivery-challan', challan, settings, challan.gst_type, {
       copyLabel: INVOICE_COPY_LABELS[copy],
       pageNumber: index + 1,
       totalPages: pages.length,

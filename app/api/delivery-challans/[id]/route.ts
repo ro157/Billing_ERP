@@ -3,6 +3,7 @@ import db from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { challanSchema } from '@/lib/validations'
 import { ensureDeliveryChallanSchema } from '@/lib/ensure-delivery-challan-schema'
+import { computeSalesDocumentItemTotals } from '@/lib/sales-document-totals'
 import { randomUUID } from 'crypto'
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
@@ -64,8 +65,17 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
         ) as any[]
         if (prod[0]) productName = prod[0].name
       }
+      const totals = computeSalesDocumentItemTotals(
+        {
+          quantity: item.quantity,
+          rate: item.rate || 0,
+          discount: item.discount || 0,
+          gstRate: item.gstRate || 0,
+        },
+        'CGST_SGST'
+      )
       await conn.execute(
-        'INSERT INTO challan_items (id, challan_id, product_id, description, quantity, rate, gst_rate, gst_amount, amount) VALUES (?,?,?,?,?,?,?,?,?)',
+        'INSERT INTO challan_items (id, challan_id, product_id, description, quantity, rate, discount, gst_rate, gst_amount, amount) VALUES (?,?,?,?,?,?,?,?,?,?)',
         [
           randomUUID(),
           params.id,
@@ -73,9 +83,10 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
           item.description || productName,
           item.quantity,
           item.rate || 0,
+          item.discount || 0,
           item.gstRate || 0,
-          (item.quantity * (item.rate || 0) * (item.gstRate || 0)) / 100,
-          item.quantity * (item.rate || 0) * (1 + (item.gstRate || 0) / 100),
+          totals.cgst + totals.sgst + totals.igst,
+          totals.total,
         ]
       )
     }

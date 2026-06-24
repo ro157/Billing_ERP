@@ -275,6 +275,7 @@ export default function DeliveryChallansPage() {
         pdfApiUrl={pdfViewerUrl}
         title={pdfViewerTitle}
         filename={pdfViewerFilename}
+        enableInvoiceCopies
       />
     </div>
   )

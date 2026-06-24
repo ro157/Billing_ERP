@@ -357,6 +357,7 @@ export const challanSchema = z.object({
     quantity: z.number().positive(),
     rate: z.number().min(0).default(0),
     unit: z.string().optional(),
+    discount: z.number().min(0).max(100).default(0),
     gstRate: z.number().min(0).max(100).default(0),
   })).min(1),
 })
