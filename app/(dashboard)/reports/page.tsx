@@ -7,10 +7,10 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Badge } from '@/components/ui/badge'
 import { FileSpreadsheet, Search } from 'lucide-react'
-import { formatCurrency, formatDate } from '@/lib/utils'
+import { formatCurrency, formatDate, cn } from '@/lib/utils'
 import { usePageCount } from '@/hooks/use-page-count'
+import { useToast } from '@/hooks/use-toast'
 
 const REPORT_TYPES = [
   { value: 'sales-summary', label: 'Sales Summary' },
@@ -23,21 +23,60 @@ const REPORT_TYPES = [
   { value: 'vendor-ledger', label: 'Vendor Ledger' },
 ]
 
+const exportExcelWrapClass =
+  'rounded-md bg-gradient-to-r from-green-500 via-emerald-500 to-teal-500 p-[2px] shadow-sm'
+
+const exportExcelBtnClass = cn(
+  'h-9 border-0 bg-background text-emerald-800 hover:bg-emerald-50',
+  'dark:text-emerald-300 dark:hover:bg-emerald-950/40'
+)
+
 export default function ReportsPage() {
   usePageCount('Generate and export business reports')
+  const { toast } = useToast()
   const [reportType, setReportType] = useState('sales-summary')
   const [from, setFrom] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0])
   const [to, setTo] = useState(new Date().toISOString().split('T')[0])
   const [data, setData] = useState<any[]>([])
+  const [summary, setSummary] = useState<Record<string, unknown> | null>(null)
   const [loading, setLoading] = useState(false)
+  const [hasRun, setHasRun] = useState(false)
+
+  const resetReportResults = () => {
+    setData([])
+    setSummary(null)
+    setHasRun(false)
+  }
+
+  const handleReportTypeChange = (value: string) => {
+    setReportType(value)
+    resetReportResults()
+  }
 
   const fetchReport = async () => {
+    if (showDateRange && from && to && from > to) {
+      toast({ title: 'From date cannot be after To date', variant: 'destructive' })
+      return
+    }
+
     setLoading(true)
+    setHasRun(true)
     try {
       const params = new URLSearchParams({ type: reportType, from, to })
       const res = await fetch(`/api/reports?${params}`)
       const result = await res.json()
-      setData(Array.isArray(result) ? result : [])
+      if (!res.ok) {
+        toast({ title: result.error || 'Failed to load report', variant: 'destructive' })
+        setData([])
+        setSummary(null)
+        return
+      }
+      setData(Array.isArray(result.data) ? result.data : [])
+      setSummary(result.summary ?? null)
+    } catch {
+      toast({ title: 'Failed to load report', variant: 'destructive' })
+      setData([])
+      setSummary(null)
     } finally {
       setLoading(false)
     }
@@ -48,36 +87,46 @@ export default function ReportsPage() {
     const ws = utils.json_to_sheet(data.map((row: any) => {
       if (reportType === 'sales-summary') {
         return {
-          'Invoice No': row.invoiceNo,
-          'Customer': row.customer?.name,
-          'Date': formatDate(row.date),
-          'Total': Number(row.totalAmount),
-          'Paid': Number(row.paidAmount),
-          'Balance': Number(row.balanceAmount),
-          'Status': row.status,
+          Date: formatDate(row.date),
+          'Invoice Number': row.invoiceNo,
+          'Customer Name': row.customerName || row.customer?.name,
+          Amount: Number(row.totalAmount),
         }
       }
-      if (reportType === 'purchase-summary') {
+      if (reportType === 'gst-sales') {
+        return {
+          'Invoice No': row.invoiceNo,
+          Customer: row.customer?.name,
+          Date: formatDate(row.date),
+          Total: Number(row.totalAmount),
+          CGST: Number(row.cgstAmount),
+          SGST: Number(row.sgstAmount),
+          IGST: Number(row.igstAmount),
+        }
+      }
+      if (reportType === 'purchase-summary' || reportType === 'gst-purchase') {
         return {
           'Purchase No': row.purchaseNo,
-          'Vendor': row.vendor?.name,
-          'Date': formatDate(row.date),
-          'Total': Number(row.totalAmount),
-          'Paid': Number(row.paidAmount),
-          'Balance': Number(row.balanceAmount),
-          'Status': row.status,
+          Vendor: row.vendor?.name,
+          Date: formatDate(row.date),
+          Total: Number(row.totalAmount),
+          Paid: Number(row.paidAmount),
+          Balance: Number(row.balanceAmount),
+          ...(reportType === 'gst-purchase'
+            ? {
+                CGST: Number(row.cgstAmount),
+                SGST: Number(row.sgstAmount),
+                IGST: Number(row.igstAmount),
+              }
+            : {}),
         }
       }
       if (reportType === 'stock-report' || reportType === 'low-stock') {
         return {
-          'Product': row.name,
-          'SKU': row.sku,
-          'HSN': row.hsnCode,
-          'Category': row.category?.name,
-          'Unit': row.unit?.shortName,
-          'Stock': row.currentStock,
-          'Sale Price': Number(row.salePrice),
-          'Purchase Price': Number(row.purchasePrice),
+          Product: row.name,
+          Description: row.description || '-',
+          HSN: row.hsn,
+          Stock: Number(row.currentStock),
         }
       }
       return row
@@ -87,26 +136,69 @@ export default function ReportsPage() {
     writeFile(wb, `${reportType}-${from}-${to}.xlsx`)
   }
 
-  const renderTable = () => {
-    if (data.length === 0) return (
-      <div className="text-center py-16 text-muted-foreground">
-        Run the report to see results
-      </div>
-    )
+  const showDateRange = !['stock-report', 'low-stock'].includes(reportType)
 
-    if (reportType === 'sales-summary' || reportType === 'gst-sales') {
+  const renderTable = () => {
+    if (loading) {
+      return <div className="text-center py-16 text-muted-foreground">Loading report...</div>
+    }
+    if (!hasRun) {
+      return <div className="text-center py-16 text-muted-foreground">Run the report to see results</div>
+    }
+    if (data.length === 0) {
+      return (
+        <div className="text-center py-16 text-muted-foreground">
+          {reportType === 'customer-ledger' || reportType === 'vendor-ledger'
+            ? 'Ledger report coming soon'
+            : 'No records found for the selected filters'}
+        </div>
+      )
+    }
+
+    if (reportType === 'sales-summary') {
+      const totalAmount = Number(summary?.total_sales) || data.reduce((s, r) => s + Number(r.totalAmount || 0), 0)
       return (
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Invoice No</TableHead><TableHead>Customer</TableHead><TableHead>Date</TableHead>
+              <TableHead>Date</TableHead>
+              <TableHead>Invoice Number</TableHead>
+              <TableHead>Customer Name</TableHead>
               <TableHead className="text-right">Amount</TableHead>
-              {reportType === 'gst-sales' && <>
-                <TableHead className="text-right">CGST</TableHead>
-                <TableHead className="text-right">SGST</TableHead>
-                <TableHead className="text-right">IGST</TableHead>
-              </>}
-              <TableHead>Status</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {data.map((row: any) => (
+              <TableRow key={row.id}>
+                <TableCell>{formatDate(row.date)}</TableCell>
+                <TableCell className="font-medium">{row.invoiceNo}</TableCell>
+                <TableCell>{row.customerName || row.customer?.name}</TableCell>
+                <TableCell className="text-right">{formatCurrency(row.totalAmount)}</TableCell>
+              </TableRow>
+            ))}
+            <TableRow className="bg-muted/40 font-semibold">
+              <TableCell colSpan={3} className="text-right">
+                Total ({data.length} invoice{data.length === 1 ? '' : 's'})
+              </TableCell>
+              <TableCell className="text-right">{formatCurrency(totalAmount)}</TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
+      )
+    }
+
+    if (reportType === 'gst-sales') {
+      return (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Invoice No</TableHead>
+              <TableHead>Customer</TableHead>
+              <TableHead>Date</TableHead>
+              <TableHead className="text-right">Amount</TableHead>
+              <TableHead className="text-right">CGST</TableHead>
+              <TableHead className="text-right">SGST</TableHead>
+              <TableHead className="text-right">IGST</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -116,19 +208,15 @@ export default function ReportsPage() {
                 <TableCell>{row.customer?.name}</TableCell>
                 <TableCell>{formatDate(row.date)}</TableCell>
                 <TableCell className="text-right">{formatCurrency(row.totalAmount)}</TableCell>
-                {reportType === 'gst-sales' && <>
-                  <TableCell className="text-right">{formatCurrency(row.cgstAmount)}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(row.sgstAmount)}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(row.igstAmount)}</TableCell>
-                </>}
-                <TableCell><Badge variant="secondary">{row.status}</Badge></TableCell>
+                <TableCell className="text-right">{formatCurrency(row.cgstAmount)}</TableCell>
+                <TableCell className="text-right">{formatCurrency(row.sgstAmount)}</TableCell>
+                <TableCell className="text-right">{formatCurrency(row.igstAmount)}</TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       )
     }
-
     if (reportType === 'purchase-summary' || reportType === 'gst-purchase') {
       return (
         <Table>
@@ -141,7 +229,6 @@ export default function ReportsPage() {
                 <TableHead className="text-right">SGST</TableHead>
                 <TableHead className="text-right">IGST</TableHead>
               </>}
-              <TableHead>Status</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -156,7 +243,6 @@ export default function ReportsPage() {
                   <TableCell className="text-right">{formatCurrency(row.sgstAmount)}</TableCell>
                   <TableCell className="text-right">{formatCurrency(row.igstAmount)}</TableCell>
                 </>}
-                <TableCell><Badge variant="secondary">{row.status}</Badge></TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -169,24 +255,31 @@ export default function ReportsPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Product</TableHead><TableHead>SKU</TableHead><TableHead>Category</TableHead>
-              <TableHead>Unit</TableHead><TableHead className="text-right">Stock</TableHead>
-              <TableHead className="text-right">Sale Price</TableHead>
+              <TableHead>Product</TableHead>
+              <TableHead>Description</TableHead>
+              <TableHead>HSN</TableHead>
+              <TableHead className="text-right">Stock</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {data.map((row: any) => (
-              <TableRow key={row.id}>
-                <TableCell className="font-medium">{row.name}</TableCell>
-                <TableCell>{row.sku || '-'}</TableCell>
-                <TableCell>{row.category?.name || '-'}</TableCell>
-                <TableCell>{row.unit?.shortName || '-'}</TableCell>
-                <TableCell className="text-right">
-                  <span className={row.currentStock <= 10 ? 'text-orange-600 font-medium' : ''}>{row.currentStock}</span>
-                </TableCell>
-                <TableCell className="text-right">{formatCurrency(row.salePrice)}</TableCell>
-              </TableRow>
-            ))}
+            {data.map((row: any) => {
+              const lowAlert = Number(row.lowStockAlert ?? 10)
+              const isLow = Number(row.currentStock) <= lowAlert
+              return (
+                <TableRow key={row.id}>
+                  <TableCell className="font-medium">{row.name}</TableCell>
+                  <TableCell className="max-w-xs truncate" title={row.description}>
+                    {row.description || '-'}
+                  </TableCell>
+                  <TableCell className="font-mono text-xs">{row.hsn || '-'}</TableCell>
+                  <TableCell className="text-right">
+                    <span className={isLow ? 'text-orange-600 font-medium' : ''}>
+                      {row.currentStock}
+                    </span>
+                  </TableCell>
+                </TableRow>
+              )
+            })}
           </TableBody>
         </Table>
       )
@@ -194,8 +287,6 @@ export default function ReportsPage() {
 
     return null
   }
-
-  const showDateRange = !['stock-report', 'low-stock'].includes(reportType)
 
   return (
     <div className="space-y-4 md:space-y-6 min-w-0">
@@ -231,7 +322,7 @@ export default function ReportsPage() {
             <div className="grid grid-cols-2 gap-3 items-end">
               <div className="space-y-2 min-w-0">
                 <Label>Report Type</Label>
-                <Select value={reportType} onValueChange={setReportType}>
+                <Select value={reportType} onValueChange={handleReportTypeChange}>
                   <SelectTrigger className="h-9 w-full">
                     <SelectValue />
                   </SelectTrigger>
@@ -249,11 +340,13 @@ export default function ReportsPage() {
                 <span className="truncate">{loading ? 'Loading...' : 'Run Report'}</span>
               </Button>
             </div>
-            {data.length > 0 && (
-              <Button variant="outline" onClick={exportExcel} className="h-9 w-full">
-                <FileSpreadsheet className="w-4 h-4 mr-2" />
-                Export Excel
-              </Button>
+            {hasRun && data.length > 0 && (
+              <div className={cn(exportExcelWrapClass, 'w-full')}>
+                <Button variant="outline" onClick={exportExcel} className={cn(exportExcelBtnClass, 'w-full')}>
+                  <FileSpreadsheet className="w-4 h-4 mr-2 text-green-600 dark:text-emerald-400" />
+                  Export Excel
+                </Button>
+              </div>
             )}
           </div>
 
@@ -261,7 +354,7 @@ export default function ReportsPage() {
           <div className="hidden md:flex md:flex-row md:items-end md:gap-3">
             <div className="space-y-2 flex-1 max-w-xs min-w-0">
               <Label>Report Type</Label>
-              <Select value={reportType} onValueChange={setReportType}>
+              <Select value={reportType} onValueChange={handleReportTypeChange}>
                 <SelectTrigger className="h-9 w-full">
                   <SelectValue />
                 </SelectTrigger>
@@ -302,11 +395,13 @@ export default function ReportsPage() {
               <Search className="w-4 h-4 mr-2" />
               {loading ? 'Loading...' : 'Run Report'}
             </Button>
-            {data.length > 0 && (
-              <Button variant="outline" onClick={exportExcel} className="h-9 shrink-0">
-                <FileSpreadsheet className="w-4 h-4 mr-2" />
-                Export Excel
-              </Button>
+            {hasRun && data.length > 0 && (
+              <div className={exportExcelWrapClass}>
+                <Button variant="outline" onClick={exportExcel} className={exportExcelBtnClass}>
+                  <FileSpreadsheet className="w-4 h-4 mr-2 text-green-600 dark:text-emerald-400" />
+                  Export Excel
+                </Button>
+              </div>
             )}
           </div>
         </CardContent>

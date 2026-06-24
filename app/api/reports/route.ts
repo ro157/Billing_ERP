@@ -3,99 +3,171 @@ import db from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { appendOrgFilter } from '@/lib/tenant'
 
+function mapInvoiceRow(row: Record<string, unknown>) {
+  return {
+    id: row.id,
+    invoiceNo: row.invoice_no,
+    date: row.date,
+    status: row.status,
+    totalAmount: row.total_amount,
+    paidAmount: row.paid_amount,
+    balanceAmount: row.balance_amount,
+    cgstAmount: row.cgst_amount,
+    sgstAmount: row.sgst_amount,
+    igstAmount: row.igst_amount,
+    customerName: row.customer_name || '-',
+    customer: { name: row.customer_name },
+  }
+}
+
+function mapPurchaseRow(row: Record<string, unknown>) {
+  return {
+    id: row.id,
+    purchaseNo: row.purchase_no,
+    date: row.date,
+    status: row.status,
+    totalAmount: row.total_amount,
+    paidAmount: row.paid_amount,
+    balanceAmount: row.balance_amount,
+    cgstAmount: row.cgst_amount,
+    sgstAmount: row.sgst_amount,
+    igstAmount: row.igst_amount,
+    vendor: { name: row.vendor_name },
+  }
+}
+
+function formatProductHsn(hsn?: unknown, sac?: unknown): string {
+  const h = hsn ? String(hsn).trim() : ''
+  const s = sac ? String(sac).trim() : ''
+  if (h && s) return `${h} / ${s}`
+  return h || s || '-'
+}
+
+function mapProductRow(row: Record<string, unknown>) {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description || '-',
+    hsn: formatProductHsn(row.hsn_code, row.sac_code),
+    currentStock: row.current_stock,
+    lowStockAlert: row.low_stock_alert,
+  }
+}
+
 export async function GET(req: NextRequest) {
   const { error, organizationId } = await requirePermission('reports', 'view')
   if (error) return error
 
   const { searchParams } = new URL(req.url)
-  const type = searchParams.get('type') || 'sales'
-  const fromDate = searchParams.get('fromDate')
-  const toDate = searchParams.get('toDate')
-  const page = parseInt(searchParams.get('page') || '1')
-  const limit = parseInt(searchParams.get('limit') || '50')
-  const offset = (page - 1) * limit
+  const type = searchParams.get('type') || 'sales-summary'
+  const fromDate = searchParams.get('from') || searchParams.get('fromDate')
+  const toDate = searchParams.get('to') || searchParams.get('toDate')
+  const limit = parseInt(searchParams.get('limit') || '500', 10)
 
-  const dateConditions: string[] = []
-  const params: any[] = []
-  appendOrgFilter(dateConditions, params, organizationId!, 'i')
+  const salesTypes = ['sales-summary', 'gst-sales', 'sales']
+  const purchaseTypes = ['purchase-summary', 'gst-purchase', 'purchases']
+  const stockTypes = ['stock-report', 'stock']
+  const lowStockTypes = ['low-stock']
 
-  if (fromDate) { dateConditions.push('i.date >= ?'); params.push(fromDate) }
-  if (toDate) { dateConditions.push('i.date <= ?'); params.push(toDate) }
-  const invoiceDateWhere = 'WHERE ' + dateConditions.join(' AND ')
-
-  if (type === 'sales') {
-    const [rows] = await db.execute(
-      `SELECT i.*, c.name as customer_name FROM invoices i LEFT JOIN customers c ON i.customer_id = c.id
-       ${invoiceDateWhere} ORDER BY i.date DESC LIMIT ? OFFSET ?`,
-      [...params, limit, offset]
-    ) as any[]
-    const [summary] = await db.execute(
-      `SELECT COALESCE(SUM(total_amount),0) as total_sales, COALESCE(SUM(paid_amount),0) as total_received,
-              COALESCE(SUM(balance_amount),0) as total_outstanding, COUNT(*) as total_count
-       FROM invoices i ${invoiceDateWhere}`,
-      params
-    ) as any[]
-    return NextResponse.json({ data: rows, summary: summary[0] })
-  }
-
-  if (type === 'purchases') {
-    const purchaseConditions: string[] = []
-    const purchaseParams: any[] = []
-    appendOrgFilter(purchaseConditions, purchaseParams, organizationId!, 'p')
-    if (fromDate) { purchaseConditions.push('p.date >= ?'); purchaseParams.push(fromDate) }
-    if (toDate) { purchaseConditions.push('p.date <= ?'); purchaseParams.push(toDate) }
-    const purchaseDateWhere = 'WHERE ' + purchaseConditions.join(' AND ')
+  if (salesTypes.includes(type)) {
+    const conditions: string[] = []
+    const params: unknown[] = []
+    appendOrgFilter(conditions, params, organizationId!, 'i')
+    if (fromDate) {
+      conditions.push('DATE(i.date) >= ?')
+      params.push(fromDate)
+    }
+    if (toDate) {
+      conditions.push('DATE(i.date) <= ?')
+      params.push(toDate)
+    }
+    const where = 'WHERE ' + conditions.join(' AND ')
 
     const [rows] = await db.execute(
-      `SELECT p.*, v.name as vendor_name FROM purchases p LEFT JOIN vendors v ON p.vendor_id = v.id
-       ${purchaseDateWhere} ORDER BY p.date DESC LIMIT ? OFFSET ?`,
-      [...purchaseParams, limit, offset]
-    ) as any[]
-    const [summary] = await db.execute(
-      `SELECT COALESCE(SUM(total_amount),0) as total_purchases, COALESCE(SUM(paid_amount),0) as total_paid,
-              COALESCE(SUM(balance_amount),0) as total_outstanding, COUNT(*) as total_count
-       FROM purchases p ${purchaseDateWhere}`,
-      purchaseParams
-    ) as any[]
-    return NextResponse.json({ data: rows, summary: summary[0] })
-  }
-
-  if (type === 'stock') {
-    const stockConditions: string[] = ['p.is_active = 1']
-    const stockParams: any[] = []
-    appendOrgFilter(stockConditions, stockParams, organizationId!, 'p')
-    const stockWhere = 'WHERE ' + stockConditions.join(' AND ')
-
-    const [rows] = await db.execute(
-      `SELECT p.*, c.name as category_name, u.short_name as unit_short_name
-       FROM products p LEFT JOIN categories c ON p.category_id = c.id LEFT JOIN units u ON p.unit_id = u.id
-       ${stockWhere} ORDER BY p.name ASC LIMIT ? OFFSET ?`,
-      [...stockParams, limit, offset]
-    ) as any[]
-    const [summary] = await db.execute(
-      `SELECT COUNT(*) as total_products,
-              SUM(CASE WHEN current_stock <= low_stock_alert THEN 1 ELSE 0 END) as low_stock_count,
-              SUM(current_stock * purchase_price) as total_stock_value
-       FROM products p ${stockWhere}`,
-      stockParams
-    ) as any[]
-    return NextResponse.json({ data: rows, summary: summary[0] })
-  }
-
-  if (type === 'gst') {
-    const [rows] = await db.execute(
-      `SELECT DATE_FORMAT(i.date, '%Y-%m') as period,
-              COALESCE(SUM(i.taxable_amount),0) as taxable_amount,
-              COALESCE(SUM(i.cgst_amount),0) as cgst,
-              COALESCE(SUM(i.sgst_amount),0) as sgst,
-              COALESCE(SUM(i.igst_amount),0) as igst,
-              COALESCE(SUM(i.total_amount),0) as total
+      `SELECT i.id, i.invoice_no, i.date, i.status, i.total_amount, i.paid_amount, i.balance_amount,
+              i.cgst_amount, i.sgst_amount, i.igst_amount, c.name AS customer_name
        FROM invoices i
-       ${invoiceDateWhere}
-       GROUP BY DATE_FORMAT(i.date, '%Y-%m') ORDER BY period ASC`,
+       LEFT JOIN customers c ON i.customer_id = c.id
+       ${where}
+       ORDER BY i.date ASC, i.invoice_no ASC
+       LIMIT ?`,
+      [...params, limit]
+    ) as [Record<string, unknown>[]]
+
+    const [summaryRows] = await db.execute(
+      `SELECT COALESCE(SUM(i.total_amount), 0) AS total_sales,
+              COALESCE(SUM(i.paid_amount), 0) AS total_received,
+              COALESCE(SUM(i.balance_amount), 0) AS total_outstanding,
+              COUNT(*) AS total_count
+       FROM invoices i
+       ${where}`,
       params
-    ) as any[]
-    return NextResponse.json({ data: rows })
+    ) as [Record<string, unknown>[]]
+
+    return NextResponse.json({ data: rows.map(mapInvoiceRow), summary: summaryRows[0] || null })
+  }
+
+  if (purchaseTypes.includes(type)) {
+    const conditions: string[] = []
+    const params: unknown[] = []
+    appendOrgFilter(conditions, params, organizationId!, 'p')
+    if (fromDate) {
+      conditions.push('DATE(p.date) >= ?')
+      params.push(fromDate)
+    }
+    if (toDate) {
+      conditions.push('DATE(p.date) <= ?')
+      params.push(toDate)
+    }
+    const where = 'WHERE ' + conditions.join(' AND ')
+
+    const [rows] = await db.execute(
+      `SELECT p.id, p.purchase_no, p.date, p.status, p.total_amount, p.paid_amount, p.balance_amount,
+              p.cgst_amount, p.sgst_amount, p.igst_amount, v.name AS vendor_name
+       FROM purchases p
+       LEFT JOIN vendors v ON p.vendor_id = v.id
+       ${where}
+       ORDER BY p.date DESC, p.purchase_no DESC
+       LIMIT ?`,
+      [...params, limit]
+    ) as [Record<string, unknown>[]]
+
+    const [summaryRows] = await db.execute(
+      `SELECT COALESCE(SUM(p.total_amount), 0) AS total_purchases,
+              COALESCE(SUM(p.paid_amount), 0) AS total_paid,
+              COALESCE(SUM(p.balance_amount), 0) AS total_outstanding,
+              COUNT(*) AS total_count
+       FROM purchases p
+       ${where}`,
+      params
+    ) as [Record<string, unknown>[]]
+
+    return NextResponse.json({ data: rows.map(mapPurchaseRow), summary: summaryRows[0] || null })
+  }
+
+  if (stockTypes.includes(type) || lowStockTypes.includes(type)) {
+    const conditions: string[] = ['p.is_active = 1']
+    const params: unknown[] = []
+    appendOrgFilter(conditions, params, organizationId!, 'p')
+    if (lowStockTypes.includes(type)) {
+      conditions.push('p.current_stock <= COALESCE(p.low_stock_alert, 10)')
+    }
+    const where = 'WHERE ' + conditions.join(' AND ')
+
+    const [rows] = await db.execute(
+      `SELECT p.id, p.name, p.description, p.hsn_code, p.sac_code, p.current_stock, p.low_stock_alert
+       FROM products p
+       ${where}
+       ORDER BY p.name ASC
+       LIMIT ?`,
+      [...params, limit]
+    ) as [Record<string, unknown>[]]
+
+    return NextResponse.json({ data: rows.map(mapProductRow) })
+  }
+
+  if (type === 'customer-ledger' || type === 'vendor-ledger') {
+    return NextResponse.json({ data: [], message: 'Ledger report coming soon' })
   }
 
   return NextResponse.json({ error: 'Invalid report type' }, { status: 400 })
