@@ -11,18 +11,18 @@ export async function GET(req: NextRequest) {
     const now = new Date()
     const year = parseInt(searchParams.get('year') || String(now.getFullYear()), 10)
     const monthParam = searchParams.get('month') || ''
-    const today = now.toISOString().slice(0, 10)
+    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 
-    const [[salesToday]] = await db.execute(
+    const [[salesThisMonth]] = await db.execute(
       `SELECT COALESCE(SUM(total_amount),0) as amount, COUNT(*) as count FROM invoices
-       WHERE organization_id = ? AND DATE(date) = ?`,
-      [organizationId, today]
+       WHERE organization_id = ? AND DATE_FORMAT(date, '%Y-%m') = ?`,
+      [organizationId, currentMonthKey]
     ) as any[][]
 
-    const [[purchasesToday]] = await db.execute(
+    const [[purchasesThisMonth]] = await db.execute(
       `SELECT COALESCE(SUM(total_amount),0) as amount, COUNT(*) as count FROM purchases
-       WHERE organization_id = ? AND DATE(date) = ? AND status != 'CANCELLED'`,
-      [organizationId, today]
+       WHERE organization_id = ? AND DATE_FORMAT(date, '%Y-%m') = ? AND status != 'CANCELLED'`,
+      [organizationId, currentMonthKey]
     ) as any[][]
 
     const [[pendingQuotRow]] = await db.execute(
@@ -88,8 +88,8 @@ export async function GET(req: NextRequest) {
     }
 
     return NextResponse.json({
-      salesToday: { amount: Number(salesToday.amount), count: Number(salesToday.count) },
-      purchasesToday: { amount: Number(purchasesToday.amount), count: Number(purchasesToday.count) },
+      salesThisMonth: { amount: Number(salesThisMonth.amount), count: Number(salesThisMonth.count) },
+      purchasesThisMonth: { amount: Number(purchasesThisMonth.amount), count: Number(purchasesThisMonth.count) },
       pendingQuotations: Number(pendingQuotRow.count),
       lowStockCount: Number(lowStockRow.count),
       chartType,

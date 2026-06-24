@@ -18,11 +18,33 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const data = registerSchema.parse(body)
 
-    const [existing] = (await conn.execute('SELECT id FROM users WHERE email = ? LIMIT 1', [
-      data.email,
-    ])) as [{ id: string }[], unknown]
+    const email = data.email.trim().toLowerCase()
+    const [existing] = (await conn.execute(
+      `SELECT u.id, o.status AS org_status
+       FROM users u
+       LEFT JOIN organization_members om ON om.user_id = u.id AND om.role = 'OWNER'
+       LEFT JOIN organizations o ON o.id = om.organization_id
+       WHERE u.email = ?
+       LIMIT 1`,
+      [email]
+    )) as [{ id: string; org_status: string | null }[], unknown]
     if (existing[0]) {
-      return NextResponse.json({ error: 'Email already registered' }, { status: 400 })
+      if (existing[0].org_status === 'PENDING') {
+        return NextResponse.json(
+          {
+            error:
+              'This email is already registered and pending Super Admin approval. Please wait for approval, then sign in.',
+          },
+          { status: 400 }
+        )
+      }
+      return NextResponse.json(
+        {
+          error:
+            'This email is already registered. Please sign in or use a different email address.',
+        },
+        { status: 400 }
+      )
     }
 
     await conn.beginTransaction()
@@ -33,8 +55,6 @@ export async function POST(req: NextRequest) {
     const settingsId = randomUUID()
     const slug = await generateUniqueOrgSlug(conn, data.organizationName)
     const hashedPassword = await bcrypt.hash(data.password, 12)
-    const email = data.email.trim().toLowerCase()
-
     await conn.execute(
       `INSERT INTO organizations (
         id, name, slug, status, plan, phone, address, gstin, state, pincode, owner_name, owner_email

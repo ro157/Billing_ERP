@@ -86,6 +86,22 @@ export function sanitizeString(str: string): string {
   return str.trim().replace(/[<>]/g, '')
 }
 
+/** Trim and collapse spaces for display/storage. */
+export function formatCategoryName(name: string): string {
+  return name.trim().replace(/\s+/g, ' ')
+}
+
+/** Normalized key for duplicate category checks (case- and trailing-punctuation-insensitive). */
+export function normalizeCategoryNameKey(name: string): string {
+  return formatCategoryName(name)
+    .replace(/^[\s.,;:!?\-_]+|[\s.,;:!?\-_]+$/g, '')
+    .toLowerCase()
+}
+
+export function sortByNameCaseSensitive<T extends { name: string }>(items: T[]): T[] {
+  return [...items].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'case' }))
+}
+
 export const GST_RATES = [0, 0.1, 0.25, 1.5, 3, 5, 7.5, 12, 18, 28]
 
 export const INDIAN_STATES = [

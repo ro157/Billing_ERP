@@ -1,18 +1,17 @@
 import { calculateGST, computeRoundOff, roundToNearestRupee, roundToTwo } from '@/lib/utils'
+import { computeSalesDocumentItemTotals } from '@/lib/sales-document-totals'
 import { randomUUID } from 'crypto'
 
-export function computeQuotationItemTotals(item: {
-  quantity: number
-  rate: number
-  discount?: number
-  gstRate: number
-}, gstType: 'CGST_SGST' | 'IGST' | 'EXEMPT' = 'CGST_SGST') {
-  const taxable = roundToTwo(item.quantity * item.rate)
-  const gst = calculateGST(taxable, item.gstRate || 0, gstType)
-  const totalWithGst = roundToTwo(taxable + gst.total)
-  const discAmt = roundToTwo(Math.min(Math.max(0, Number(item.discount) || 0), totalWithGst))
-  const total = roundToTwo(totalWithGst - discAmt)
-  return { taxable, cgst: gst.cgst, sgst: gst.sgst, igst: gst.igst, total, discAmt }
+export function computeQuotationItemTotals(
+  item: {
+    quantity: number
+    rate: number
+    discount?: number
+    gstRate: number
+  },
+  gstType: 'CGST_SGST' | 'IGST' | 'EXEMPT' = 'CGST_SGST'
+) {
+  return computeSalesDocumentItemTotals(item, gstType)
 }
 
 export function buildQuotationTotals(

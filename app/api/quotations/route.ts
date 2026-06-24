@@ -5,6 +5,7 @@ import { appendOrgFilter } from '@/lib/tenant'
 import { quotationSchema } from '@/lib/validations'
 import { ensureQuotationSchema } from '@/lib/ensure-quotation-schema'
 import { buildQuotationTotals, insertQuotationItems } from '@/lib/quotation-save'
+import { buildDocumentNumberPrefix, documentSerialSubstringStart, nextDocumentNumber } from '@/lib/document-number'
 import { randomUUID } from 'crypto'
 
 export async function GET(req: NextRequest) {
@@ -67,16 +68,12 @@ export async function POST(req: NextRequest) {
       [organizationId]
     ) as any[]
     const prefix = settings[0]?.quotation_prefix || 'QT'
+    const numberPrefix = buildDocumentNumberPrefix(prefix, data.date)
     const [last] = await conn.execute(
-      'SELECT quotation_no FROM quotations WHERE organization_id = ? AND quotation_no LIKE ? ORDER BY created_at DESC LIMIT 1',
-      [organizationId, `${prefix}%`]
+      `SELECT quotation_no FROM quotations WHERE organization_id = ? AND quotation_no LIKE ? ORDER BY CAST(SUBSTRING(quotation_no, ?) AS UNSIGNED) DESC LIMIT 1`,
+      [organizationId, `${numberPrefix}%`, documentSerialSubstringStart(numberPrefix)]
     ) as any[]
-    let nextNum = 1
-    if (last[0]) {
-      const m = last[0].quotation_no.match(/\d+$/)
-      if (m) nextNum = parseInt(m[0]) + 1
-    }
-    const quotationNo = `${prefix}${String(nextNum).padStart(4, '0')}`
+    const quotationNo = nextDocumentNumber(prefix, data.date, last[0]?.quotation_no)
 
     const gstType = data.gstType || 'CGST_SGST'
     const totals = buildQuotationTotals(data.items, gstType)

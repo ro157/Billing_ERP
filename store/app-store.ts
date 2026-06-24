@@ -7,11 +7,14 @@ interface AppState {
   sidebarOpen: boolean
   mobileSidebarOpen: boolean
   colorMode: ColorMode
+  pageCountLabel: string | null
   setSidebarOpen: (open: boolean) => void
   setMobileSidebarOpen: (open: boolean) => void
   toggleSidebar: () => void
   setColorMode: (mode: ColorMode) => void
   toggleColorMode: () => void
+  setPageCountLabel: (label: string | null) => void
+  clearPageCountLabel: () => void
 }
 
 export const useAppStore = create<AppState>()(
@@ -20,12 +23,15 @@ export const useAppStore = create<AppState>()(
       sidebarOpen: true,
       mobileSidebarOpen: false,
       colorMode: 'light',
+      pageCountLabel: null,
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
       setMobileSidebarOpen: (open) => set({ mobileSidebarOpen: open }),
       toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
       setColorMode: (mode) => set({ colorMode: mode }),
       toggleColorMode: () =>
         set((state) => ({ colorMode: state.colorMode === 'dark' ? 'light' : 'dark' })),
+      setPageCountLabel: (label) => set({ pageCountLabel: label }),
+      clearPageCountLabel: () => set({ pageCountLabel: null }),
     }),
     {
       name: 'app-store',

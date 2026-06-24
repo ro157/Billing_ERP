@@ -42,6 +42,12 @@ export async function GET(req: NextRequest) {
         purchase_order_prefix as purchaseOrderPrefix,
         challan_prefix as challanPrefix,
         terms_condition as termsCondition,
+        quotation_terms as quotationTerms,
+        sales_invoice_terms as salesInvoiceTerms,
+        purchase_order_terms as purchaseOrderTerms,
+        purchase_invoice_terms as purchaseInvoiceTerms,
+        delivery_challan_terms as deliveryChallanTerms,
+        returnable_challan_terms as returnableChallanTerms,
         created_at,
         updated_at
       FROM business_settings
@@ -113,6 +119,12 @@ export async function PUT(req: NextRequest) {
           purchase_order_prefix = ?,
           challan_prefix = ?,
           terms_condition = ?,
+          quotation_terms = ?,
+          sales_invoice_terms = ?,
+          purchase_order_terms = ?,
+          purchase_invoice_terms = ?,
+          delivery_challan_terms = ?,
+          returnable_challan_terms = ?,
           updated_at = CURRENT_TIMESTAMP
          WHERE id = ? AND organization_id = ?`,
         [
@@ -136,7 +148,13 @@ export async function PUT(req: NextRequest) {
           data.quotationPrefix,
           data.purchaseOrderPrefix,
           data.challanPrefix,
-          data.termsCondition || null,
+          data.salesInvoiceTerms || null,
+          data.quotationTerms || null,
+          data.salesInvoiceTerms || null,
+          data.purchaseOrderTerms || null,
+          data.purchaseInvoiceTerms || null,
+          data.deliveryChallanTerms || null,
+          data.returnableChallanTerms || null,
           existing.id,
           organizationId,
         ]
@@ -148,8 +166,10 @@ export async function PUT(req: NextRequest) {
         `INSERT INTO business_settings (
           id, organization_id, company_name, gstin, pan, address, city, state, pincode,
           phone, email, website, logo, sidebar_color, bank_name, bank_account, bank_ifsc, bank_branch,
-          invoice_prefix, quotation_prefix, purchase_order_prefix, challan_prefix, terms_condition
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          invoice_prefix, quotation_prefix, purchase_order_prefix, challan_prefix, terms_condition,
+          quotation_terms, sales_invoice_terms, purchase_order_terms, purchase_invoice_terms,
+          delivery_challan_terms, returnable_challan_terms
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           id,
           organizationId,
@@ -173,7 +193,13 @@ export async function PUT(req: NextRequest) {
           data.quotationPrefix,
           data.purchaseOrderPrefix,
           data.challanPrefix,
-          data.termsCondition || null
+          data.salesInvoiceTerms || null,
+          data.quotationTerms || null,
+          data.salesInvoiceTerms || null,
+          data.purchaseOrderTerms || null,
+          data.purchaseInvoiceTerms || null,
+          data.deliveryChallanTerms || null,
+          data.returnableChallanTerms || null,
         ]
       )
     }
@@ -203,6 +229,12 @@ export async function PUT(req: NextRequest) {
         purchase_order_prefix as purchaseOrderPrefix,
         challan_prefix as challanPrefix,
         terms_condition as termsCondition,
+        quotation_terms as quotationTerms,
+        sales_invoice_terms as salesInvoiceTerms,
+        purchase_order_terms as purchaseOrderTerms,
+        purchase_invoice_terms as purchaseInvoiceTerms,
+        delivery_challan_terms as deliveryChallanTerms,
+        returnable_challan_terms as returnableChallanTerms,
         created_at,
         updated_at
       FROM business_settings

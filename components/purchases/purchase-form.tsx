@@ -10,7 +10,9 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { useToast } from '@/hooks/use-toast'
+import { useToast, toastSuccessNavigate } from '@/hooks/use-toast'
+import { useDefaultDocumentTerms } from '@/hooks/use-default-document-terms'
+import { DocumentTermsField } from '@/components/shared/document-terms-field'
 import { purchaseSchema, type PurchaseInput } from '@/lib/validations'
 import { calculateGST, formatCurrency, GST_RATES, roundToTwo, cn } from '@/lib/utils'
 import { computePurchaseLineTotals } from '@/lib/purchase-totals'
@@ -189,6 +191,12 @@ export function PurchaseForm({ purchaseId }: { purchaseId?: string }) {
   const paymentMode = watch('paymentMode')
   const prevCalcItemsRef = useRef<PurchaseInput['items']>()
 
+  const applyDefaultTerms = useCallback(
+    (terms: string) => setValue('terms', terms),
+    [setValue]
+  )
+  useDefaultDocumentTerms('purchase-invoice', !isEdit, applyDefaultTerms)
+
   const filteredVendors = useMemo(() => {
     const q = vendorFields.name.trim().toLowerCase()
     if (!q) return vendors
@@ -308,6 +316,7 @@ export function PurchaseForm({ purchaseId }: { purchaseId?: string }) {
           paymentMode: data.payment_mode || 'CASH',
           paidAmount: Number(data.paid_amount) || 0,
           notes: data.notes || '',
+          terms: data.terms || '',
           roundOff: Number(data.round_off) || 0,
           items: (data.items || []).length > 0
             ? data.items.map((item: {
@@ -616,8 +625,10 @@ export function PurchaseForm({ purchaseId }: { purchaseId?: string }) {
         const e = await res.json()
         throw new Error(typeof e.error === 'string' ? e.error : 'Failed')
       }
-      toast({ title: isEdit ? 'Purchase updated successfully' : 'Purchase saved successfully' })
-      router.push('/purchases')
+      toastSuccessNavigate(
+        isEdit ? 'Purchase updated successfully' : 'Purchase saved successfully',
+        () => router.push('/purchases')
+      )
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : 'Error'
       toast({ title: message, variant: 'destructive' })
@@ -1025,11 +1036,18 @@ export function PurchaseForm({ purchaseId }: { purchaseId?: string }) {
           </CardContent>
         </Card>
 
-        <Card className="shadow-md border-primary/10 w-full max-w-xl ml-0 sm:ml-auto">
-          <CardHeader className="pb-2 bg-muted/40">
-            <CardTitle className="text-base">Summary</CardTitle>
-          </CardHeader>
-          <CardContent className="p-4 space-y-2">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,380px)] lg:items-start">
+          <Card className="h-full">
+            <CardContent className="p-4">
+              <DocumentTermsField register={register} />
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-md border-primary/10 w-full lg:max-w-none">
+            <CardHeader className="pb-2 bg-muted/40">
+              <CardTitle className="text-base">Summary</CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 space-y-2">
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">Taxable Amount</span>
               <span>{formatCurrency(totals.taxable)}</span>
@@ -1073,14 +1091,15 @@ export function PurchaseForm({ purchaseId }: { purchaseId?: string }) {
             </div>
           </CardContent>
         </Card>
+        </div>
 
-        <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
-          <Link href="/purchases" className="w-full sm:w-auto">
-            <Button type="button" variant="outline" className="w-full sm:w-auto">
+        <div className="grid grid-cols-2 gap-3 sm:flex sm:justify-end">
+          <Link href="/purchases" className="min-w-0">
+            <Button type="button" variant="outline" className="h-9 w-full sm:w-auto">
               Cancel
             </Button>
           </Link>
-          <Button type="submit" disabled={saving} className="w-full sm:w-auto">
+          <Button type="submit" disabled={saving} className="h-9 w-full sm:w-auto">
             {saving ? 'Saving...' : isEdit ? 'Update Record' : 'Save Record'}
           </Button>
         </div>

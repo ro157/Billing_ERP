@@ -52,7 +52,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
     const [settingsRows] = await db.execute(`
       SELECT company_name, gstin, pan, address, city, state, pincode, phone, email, website, logo,
-             bank_name, bank_account, bank_ifsc, bank_branch, bank_micr, upi_id, terms_condition
+             bank_name, bank_account, bank_ifsc, bank_branch, bank_micr, upi_id,
+             terms_condition, quotation_terms
       FROM business_settings WHERE organization_id = ? LIMIT 1
     `, [organizationId]) as any[]
 
@@ -92,7 +93,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         bankBranch: s.bank_branch,
         bankMicr: s.bank_micr,
         upiId: s.upi_id,
-        termsCondition: s.terms_condition,
+        termsCondition: s.quotation_terms || s.terms_condition,
       }
     )
 

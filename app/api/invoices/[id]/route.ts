@@ -3,19 +3,20 @@ import db from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { invoiceSchema } from '@/lib/validations'
 import { ensureInvoiceSchema } from '@/lib/ensure-invoice-schema'
-import { calculateGST, roundToNearestRupee, roundToTwo } from '@/lib/utils'
+import { roundToNearestRupee, roundToTwo } from '@/lib/utils'
+import { computeSalesDocumentItemTotals } from '@/lib/sales-document-totals'
 import { randomUUID } from 'crypto'
 
 function computeItemTotals(item: any, gstType: string) {
-  // UI uses flat ₹ discount applied after GST on the line total
-  const taxable = roundToTwo((Number(item.quantity) || 0) * (Number(item.rate) || 0))
-  const gst = calculateGST(taxable, Number(item.gstRate) || 0, (gstType as any) || 'CGST_SGST')
-  const totalWithGst = roundToTwo(taxable + gst.total)
-  const discAmt = roundToTwo(
-    Math.min(Math.max(0, Number(item.discount) || 0), totalWithGst)
+  return computeSalesDocumentItemTotals(
+    {
+      quantity: Number(item.quantity) || 0,
+      rate: Number(item.rate) || 0,
+      discount: Number(item.discount) || 0,
+      gstRate: Number(item.gstRate) || 0,
+    },
+    (gstType as 'CGST_SGST' | 'IGST' | 'EXEMPT') || 'CGST_SGST'
   )
-  const total = roundToTwo(totalWithGst - discAmt)
-  return { taxable, cgst: gst.cgst, sgst: gst.sgst, igst: gst.igst, total, discAmt }
 }
 
 async function insertInvoiceItems(

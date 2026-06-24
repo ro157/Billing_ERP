@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useToast } from '@/hooks/use-toast'
+import { usePageCount } from '@/hooks/use-page-count'
 import { Eye, Edit, Trash2, FileText } from 'lucide-react'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { ListPageToolbar } from '@/components/shared/list-page-toolbar'
@@ -67,6 +68,7 @@ export default function QuotationsPage() {
   const { toast } = useToast()
   const [quotations, setQuotations] = useState<Quotation[]>([])
   const [total, setTotal] = useState(0)
+  usePageCount(`${total} quotation(s)`)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
@@ -150,10 +152,6 @@ export default function QuotationsPage() {
 
   return (
     <div className="space-y-4 md:space-y-6 min-w-0">
-      <div className="min-w-0">
-        <p className="text-sm sm:text-base text-muted-foreground">{total} quotation(s)</p>
-      </div>
-
       <ListPageToolbar
         searchPlaceholder="Search quotations..."
         search={search}

@@ -10,9 +10,12 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { useToast } from '@/hooks/use-toast'
+import { useToast, toastSuccessNavigate } from '@/hooks/use-toast'
+import { useDefaultDocumentTerms } from '@/hooks/use-default-document-terms'
+import { DocumentTermsField } from '@/components/shared/document-terms-field'
 import { quotationSchema, type QuotationInput } from '@/lib/validations'
 import { computeLineTotals } from '@/lib/quotation-totals'
+import { normalizeProductDiscountPercent } from '@/lib/sales-document-totals'
 import { computeRoundOff, formatCurrency, GST_RATES, roundToNearestRupee, roundToTwo, cn } from '@/lib/utils'
 import { Plus, Trash2, ArrowLeft, Package, Loader2 } from 'lucide-react'
 import Link from 'next/link'
@@ -33,6 +36,7 @@ interface Product {
   gst_rate: number
   hsn_code?: string | null
   sac_code?: string | null
+  discount?: number | string | null
 }
 
 interface Customer {
@@ -305,6 +309,12 @@ export function QuotationForm({ mode, quotationId }: QuotationFormProps) {
   const watchedItems = watch('items')
   const gstType = watch('gstType')
 
+  const applyDefaultTerms = useCallback(
+    (terms: string) => setValue('terms', terms),
+    [setValue]
+  )
+  useDefaultDocumentTerms('quotation', !isEdit, applyDefaultTerms)
+
   const filteredCustomers = useMemo(() => {
     const q = buyerFields.name.trim().toLowerCase()
     if (!q) return customers
@@ -547,6 +557,7 @@ export function QuotationForm({ mode, quotationId }: QuotationFormProps) {
     setValue(`items.${index}.productId`, productId, { shouldValidate: true })
     setValue(`items.${index}.rate`, Number(p.selling_price))
     setValue(`items.${index}.gstRate`, Number(p.gst_rate))
+    setValue(`items.${index}.discount`, normalizeProductDiscountPercent(p.discount))
     setValue(`items.${index}.description`, p.description || p.name)
     setItemMeta((prev) => ({
       ...prev,
@@ -594,9 +605,7 @@ export function QuotationForm({ mode, quotationId }: QuotationFormProps) {
         gstType
       )
       taxableTotal += line.amountBeforeGst
-      totalDiscount += roundToTwo(
-        Math.min(Math.max(0, Number(item?.discount) || 0), line.totalWithGst)
-      )
+      totalDiscount += line.discountAmount
       cgst += line.gst.cgst
       sgst += line.gst.sgst
       igst += line.gst.igst
@@ -669,8 +678,10 @@ export function QuotationForm({ mode, quotationId }: QuotationFormProps) {
         const e = await res.json()
         throw new Error(formatApiError(e.error) || 'Failed')
       }
-      toast({ title: isEdit ? 'Quotation updated' : 'Quotation created successfully' })
-      router.push('/quotations')
+      toastSuccessNavigate(
+        isEdit ? 'Quotation updated' : 'Quotation created successfully',
+        () => router.push('/quotations')
+      )
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : 'Error'
       toast({ title: message, variant: 'destructive' })
@@ -939,16 +950,17 @@ export function QuotationForm({ mode, quotationId }: QuotationFormProps) {
                         </Select>
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-xs">Discount</Label>
+                        <Label className="text-xs">Discount %</Label>
                         <Input
                           type="number"
                           min="0"
+                          max="100"
                           step="0.01"
                           className="h-9 no-spinner"
                           value={Number.isFinite(item?.discount) ? item.discount : ''}
                           onChange={(e) => {
                             const raw = e.target.value
-                            const num = raw === '' ? 0 : roundToTwo(parseFloat(raw) || 0)
+                            const num = raw === '' ? 0 : Math.min(100, Math.max(0, roundToTwo(parseFloat(raw) || 0)))
                             setValue(`items.${i}.discount`, num, { shouldDirty: true })
                           }}
                         />
@@ -977,7 +989,14 @@ export function QuotationForm({ mode, quotationId }: QuotationFormProps) {
           </CardContent>
         </Card>
 
-        <Card className="shadow-md border-primary/10 w-full max-w-xl ml-0 sm:ml-auto">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,380px)] lg:items-start">
+          <Card className="h-full">
+            <CardContent className="p-4">
+              <DocumentTermsField register={register} />
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-md border-primary/10 w-full lg:max-w-none">
             <CardHeader className="pb-2 bg-muted/40">
               <CardTitle className="text-base">Summary</CardTitle>
             </CardHeader>
@@ -1020,15 +1039,16 @@ export function QuotationForm({ mode, quotationId }: QuotationFormProps) {
                 <span className="text-primary">{formatCurrency(finalGrandTotal)}</span>
               </div>
             </CardContent>
-        </Card>
+          </Card>
+        </div>
 
-        <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-2 border-t">
-          <Link href="/quotations">
-            <Button type="button" variant="outline" className="w-full sm:w-auto">
+        <div className="grid grid-cols-2 gap-3 pt-2 border-t sm:flex sm:justify-end">
+          <Link href="/quotations" className="min-w-0">
+            <Button type="button" variant="outline" className="h-9 w-full sm:w-auto">
               Cancel
             </Button>
           </Link>
-          <Button type="submit" disabled={saving} className="w-full sm:w-auto">
+          <Button type="submit" disabled={saving} className="h-9 w-full sm:w-auto">
             {saving
               ? isEdit
                 ? 'Updating...'

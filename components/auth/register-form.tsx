@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/select'
 import { ConsoleMessage, CONSOLE_MESSAGE_DURATION_MS } from '@/components/shared/console-message'
 import { useConsoleMessage } from '@/hooks/use-console-message'
+import { useToast } from '@/hooks/use-toast'
 import { sanitizeGstinInput, sanitizeMobileInput } from '@/lib/field-validation'
 import { INDIAN_STATES } from '@/lib/utils'
 import { Loader2, Eye, EyeOff, Building2, UserCircle, type LucideIcon } from 'lucide-react'
@@ -66,10 +67,23 @@ interface RegisterFormProps {
   onSignInClick?: () => void
 }
 
+function formatRegisterError(error: unknown): string {
+  if (Array.isArray(error)) {
+    return error
+      .map((e: { message?: string }) => e.message)
+      .filter(Boolean)
+      .join(', ')
+  }
+  if (typeof error === 'string' && error.trim()) return error
+  return 'Registration failed. Please check your details and try again.'
+}
+
 export function RegisterForm({ onSuccess, onSignInClick }: RegisterFormProps) {
   const router = useRouter()
+  const { toast } = useToast()
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
   const { message, showSuccess, showError, clearMessage } = useConsoleMessage()
 
   const form = useForm<RegisterInput>({
@@ -91,37 +105,55 @@ export function RegisterForm({ onSuccess, onSignInClick }: RegisterFormProps) {
   const onSubmit = async (data: RegisterInput) => {
     setLoading(true)
     clearMessage()
+    setSubmitError(null)
     try {
       const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       })
-      const result = await res.json()
+      let result: { error?: unknown; message?: string } = {}
+      try {
+        result = await res.json()
+      } catch {
+        throw new Error('Invalid server response. Please try again.')
+      }
 
       if (!res.ok) {
-        const errMsg = Array.isArray(result.error)
-          ? result.error.map((e: { message?: string }) => e.message).filter(Boolean).join(', ')
-          : result.error || 'Registration failed'
+        const errMsg = formatRegisterError(result.error)
+        setSubmitError(errMsg)
         showError(errMsg)
+        toast({ title: 'Registration failed', description: errMsg, variant: 'destructive' })
         return
       }
 
       showSuccess(
         'Registration submitted! Your organisation is pending Super Admin approval. You can sign in once approved.'
       )
+      toast({
+        title: 'Registration submitted',
+        description: 'Your organisation is pending Super Admin approval.',
+      })
 
       if (onSuccess) {
         setTimeout(onSuccess, CONSOLE_MESSAGE_DURATION_MS)
       } else {
         setTimeout(() => router.replace('/login?pending=1'), CONSOLE_MESSAGE_DURATION_MS)
       }
+    } catch (e: unknown) {
+      const errMsg = e instanceof Error ? e.message : 'Registration failed. Please try again.'
+      setSubmitError(errMsg)
+      showError(errMsg)
+      toast({ title: 'Registration failed', description: errMsg, variant: 'destructive' })
     } finally {
       setLoading(false)
     }
   }
 
-  const clearOnChange = () => clearMessage()
+  const clearOnChange = () => {
+    clearMessage()
+    setSubmitError(null)
+  }
 
   return (
     <form onSubmit={form.handleSubmit(onSubmit)} noValidate className="flex min-h-full flex-col">
@@ -342,6 +374,9 @@ export function RegisterForm({ onSuccess, onSignInClick }: RegisterFormProps) {
       </CardContent>
 
       <CardFooter className="sticky bottom-0 z-10 flex flex-col gap-3 border-t border-blue-100 bg-white/95 px-4 py-4 backdrop-blur-sm sm:px-6 sm:py-5">
+        {submitError && (
+          <ConsoleMessage type="error" text={submitError} className="text-left" />
+        )}
         <Button type="submit" className="h-11 w-full text-base shadow-md shadow-blue-600/20" disabled={loading}>
           {loading ? (
             <>

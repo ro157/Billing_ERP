@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { useToast } from '@/hooks/use-toast'
+import { useToast, toastSuccessNavigate } from '@/hooks/use-toast'
 import { Plus, Trash2, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 
@@ -52,8 +52,7 @@ export default function NewReturnableChallanPage() {
     try {
       const res = await fetch('/api/returnable-challans', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
       if (!res.ok) { const e = await res.json(); throw new Error(e.error || 'Failed') }
-      toast({ title: 'Returnable challan created' })
-      router.push('/returnable-challans')
+      toastSuccessNavigate('Returnable challan created', () => router.push('/returnable-challans'))
     } catch (e: any) {
       toast({ title: e.message || 'Error', variant: 'destructive' })
     } finally {

@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useToast } from '@/hooks/use-toast'
+import { usePageCount } from '@/hooks/use-page-count'
 import { Label } from '@/components/ui/label'
 import { Eye, Edit, Trash2, FileText, Calendar } from 'lucide-react'
 import { formatCurrency, formatDate } from '@/lib/utils'
@@ -63,6 +64,7 @@ export default function BillingPage() {
   const { toast } = useToast()
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [total, setTotal] = useState(0)
+  usePageCount(`${total} invoice(s)`)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [fromDate, setFromDate] = useState('')
@@ -150,10 +152,6 @@ export default function BillingPage() {
 
   return (
     <div className="space-y-4 md:space-y-6 min-w-0">
-      <div className="min-w-0">
-        <p className="text-xs sm:text-base text-muted-foreground">{total} invoice(s)</p>
-      </div>
-
       <ListPageToolbar
         searchPlaceholder="Company or invoice no..."
         search={search}

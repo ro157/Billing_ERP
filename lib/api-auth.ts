@@ -11,7 +11,7 @@ type AuthResult = {
   organizationId: string | null
 }
 
-async function requireOrganization(): Promise<AuthResult> {
+export async function requireOrganization(): Promise<AuthResult> {
   await ensureOrganizationSchema()
   await ensureSuperAdminSchema()
   const { error, session } = await requireAuth()

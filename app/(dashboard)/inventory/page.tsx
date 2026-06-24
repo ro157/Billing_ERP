@@ -14,9 +14,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
+import { usePageCount } from '@/hooks/use-page-count'
 import { Plus, Search, Edit, Trash2, Package, Tag, X, Eye, LayoutGrid, Table2 } from 'lucide-react'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency, formatCategoryName, normalizeCategoryNameKey, sortByNameCaseSensitive } from '@/lib/utils'
 import { parseJsonResponse } from '@/lib/fetch-json'
+import { CategorySlidePanel } from '@/components/inventory/category-slide-panel'
 
 function formatHsnSac(hsn: string | null, sac: string | null): string {
   if (hsn && sac) return `${hsn} / ${sac}`
@@ -62,6 +64,7 @@ export default function InventoryPage() {
   const [categoryFilter, setCategoryFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState<'active' | 'inactive' | 'all'>('active')
   const [total, setTotal] = useState(0)
+  usePageCount(`${total} product(s)`)
   const [page, setPage] = useState(1)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [viewDialogOpen, setViewDialogOpen] = useState(false)
@@ -159,7 +162,7 @@ export default function InventoryPage() {
       fetchOptions('/api/brands'),
       fetchOptions('/api/units'),
     ]).then(([cats, brds, unts]) => {
-      setCategories(cats)
+      setCategories(sortByNameCaseSensitive(cats))
       setBrands(brds)
       setUnits(unts)
     })
@@ -230,7 +233,10 @@ export default function InventoryPage() {
         toast({ title: 'Error', description: message, variant: 'destructive' })
         return
       }
-      toast({ title: editing ? 'Product updated' : 'Product created' })
+      toast({
+        title: editing ? 'Product updated' : 'Product created',
+        description: editing ? 'Product details saved successfully.' : undefined,
+      })
       setDialogOpen(false)
       fetchProducts()
     } catch (e: any) {
@@ -270,13 +276,26 @@ export default function InventoryPage() {
   }
 
   const addCategory = async () => {
-    if (!newCatName.trim()) return
+    const formattedName = formatCategoryName(newCatName)
+    if (!formattedName) return
+
+    const newKey = normalizeCategoryNameKey(formattedName)
+    const existing = categories.find((c) => normalizeCategoryNameKey(c.name) === newKey)
+    if (existing) {
+      toast({
+        title: 'Duplicate category',
+        description: `"${existing.name}" already exists`,
+        variant: 'destructive',
+      })
+      return
+    }
+
     setCatSaving(true)
     try {
       const res = await fetch('/api/categories', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newCatName.trim() }),
+        body: JSON.stringify({ name: formattedName }),
       })
       if (!res.ok) {
         const err = await res.json()
@@ -284,7 +303,7 @@ export default function InventoryPage() {
         return
       }
       const cat = await res.json()
-      setCategories(prev => [...prev, { id: cat.id, name: cat.name }])
+      setCategories((prev) => sortByNameCaseSensitive([...prev, { id: cat.id, name: cat.name }]))
       setNewCatName('')
       toast({ title: `Category "${cat.name}" added` })
     } finally {
@@ -307,10 +326,7 @@ export default function InventoryPage() {
 
   return (
     <div className="space-y-4 md:space-y-6 min-w-0">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <p className="text-sm sm:text-base text-muted-foreground">{total} product(s)</p>
-        </div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
         <div className="grid grid-cols-2 gap-2 w-full sm:flex sm:flex-wrap sm:w-auto sm:items-center">
           {selectedCount > 0 && (
             <Button
@@ -855,58 +871,17 @@ export default function InventoryPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Manage Categories Dialog */}
-      <Dialog open={catDialogOpen} onOpenChange={setCatDialogOpen}>
-        <DialogContent className="w-[calc(100vw-0.75rem)] max-w-md max-h-[88dvh] flex flex-col gap-0 overflow-hidden p-0 rounded-xl sm:rounded-2xl !top-3 !translate-y-0 sm:!top-[50%] sm:!translate-y-[-50%]">
-          <DialogHeader className="shrink-0 px-4 pt-4 pb-2 pr-11">
-            <DialogTitle className="text-base">Manage Categories</DialogTitle>
-          </DialogHeader>
-          <div className="flex-1 min-h-0 overflow-y-auto px-4 py-2 space-y-3">
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <Input
-                className="h-9 flex-1 min-w-0"
-                placeholder="New category name..."
-                value={newCatName}
-                onChange={(e) => setNewCatName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCategory() } }}
-              />
-              <Button
-                className="h-9 shrink-0 w-full sm:w-auto"
-                onClick={addCategory}
-                disabled={catSaving || !newCatName.trim()}
-              >
-                <Plus className="w-4 h-4 sm:mr-1" />
-                <span className="sm:inline">Add</span>
-              </Button>
-            </div>
-            <div className="border rounded-lg divide-y max-h-[min(50dvh,16rem)] overflow-y-auto">
-              {categories.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-6">No categories yet</p>
-              ) : (
-                categories.map(c => (
-                  <div key={c.id} className="flex items-center justify-between gap-2 px-3 py-2.5">
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <Tag className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
-                      <span className="text-sm truncate">{c.name}</span>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9 shrink-0 text-destructive hover:text-destructive"
-                      onClick={() => deleteCategory(c.id, c.name)}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-          <DialogFooter className="shrink-0 border-t px-3 py-2.5 sm:px-4 rounded-b-xl sm:rounded-b-2xl">
-            <Button variant="outline" className="w-full h-9 sm:w-auto" onClick={() => setCatDialogOpen(false)}>Close</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Manage Categories — right slide panel */}
+      <CategorySlidePanel
+        open={catDialogOpen}
+        onOpenChange={setCatDialogOpen}
+        categories={categories}
+        newCatName={newCatName}
+        onNewCatNameChange={setNewCatName}
+        catSaving={catSaving}
+        onAddCategory={addCategory}
+        onDeleteCategory={deleteCategory}
+      />
     </div>
   )
 }

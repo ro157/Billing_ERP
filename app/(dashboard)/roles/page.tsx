@@ -106,7 +106,10 @@ export default function RolesPage() {
         const e = await res.json()
         throw new Error(e.error || 'Failed to save')
       }
-      toast({ title: dialogMode === 'create' ? 'Permissions assigned' : 'Permissions updated' })
+      toast({
+        title: dialogMode === 'create' ? 'Permissions assigned' : 'Permissions updated',
+        description: dialogMode === 'create' ? undefined : 'Role permissions saved successfully.',
+      })
       setDialogMode(null)
       fetchPermissions()
     } catch (e: unknown) {

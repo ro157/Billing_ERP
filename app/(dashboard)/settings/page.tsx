@@ -9,13 +9,13 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Separator } from '@/components/ui/separator'
 import { useToast } from '@/hooks/use-toast'
 import { Save } from 'lucide-react'
 import { businessSettingsSchema, type BusinessSettingsInput } from '@/lib/validations'
 import { INDIAN_STATES } from '@/lib/utils'
 import { DocumentHeaderPreview } from '@/components/settings/document-header-preview'
 import { sanitizeGstinInput, sanitizeMobileInput } from '@/lib/field-validation'
+import { DOCUMENT_TERMS_MODULES } from '@/lib/document-terms'
 import {
   DEFAULT_SIDEBAR_COLOR,
   SIDEBAR_COLOR_PRESETS,
@@ -67,7 +67,12 @@ export default function SettingsPage() {
           quotationPrefix: data.quotation_prefix || data.quotationPrefix || 'QT',
           purchaseOrderPrefix: data.purchase_order_prefix || data.purchaseOrderPrefix || 'PO',
           challanPrefix: data.challan_prefix || data.challanPrefix || 'DC',
-          termsCondition: data.terms_condition || data.termsCondition || '',
+          quotationTerms: data.quotation_terms || data.quotationTerms || data.terms_condition || data.termsCondition || '',
+          salesInvoiceTerms: data.sales_invoice_terms || data.salesInvoiceTerms || data.terms_condition || data.termsCondition || '',
+          purchaseOrderTerms: data.purchase_order_terms || data.purchaseOrderTerms || data.terms_condition || data.termsCondition || '',
+          purchaseInvoiceTerms: data.purchase_invoice_terms || data.purchaseInvoiceTerms || data.terms_condition || data.termsCondition || '',
+          deliveryChallanTerms: data.delivery_challan_terms || data.deliveryChallanTerms || data.terms_condition || data.termsCondition || '',
+          returnableChallanTerms: data.returnable_challan_terms || data.returnableChallanTerms || data.terms_condition || data.termsCondition || '',
           sidebarColor: data.sidebarColor || data.sidebar_color || DEFAULT_SIDEBAR_COLOR,
         })
         setLogoPreview(data.logo || null)
@@ -117,7 +122,7 @@ export default function SettingsPage() {
       const res = await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       if (!res.ok) throw new Error('Failed')
       window.dispatchEvent(new Event('branding-updated'))
-      toast({ title: 'Settings saved' })
+      toast({ title: 'Settings saved', description: 'Your changes have been applied.' })
     } catch {
       toast({ title: 'Error saving settings', variant: 'destructive' })
     } finally {
@@ -359,9 +364,25 @@ export default function SettingsPage() {
         </Card>
 
         <Card>
-          <CardHeader><CardTitle>Terms & Conditions</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>Document Terms & Conditions</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Default terms printed on each document type. You can still override per document when creating or editing.
+            </p>
+          </CardHeader>
           <CardContent>
-            <Textarea {...register('termsCondition')} rows={4} placeholder="Enter terms and conditions to print on invoices..." />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {DOCUMENT_TERMS_MODULES.map((module) => (
+                <div key={module.field} className="space-y-2">
+                  <Label>{module.label}</Label>
+                  <Textarea
+                    {...register(module.field)}
+                    rows={3}
+                    placeholder={module.placeholder}
+                  />
+                </div>
+              ))}
+            </div>
           </CardContent>
         </Card>
 

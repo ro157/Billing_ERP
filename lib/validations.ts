@@ -248,8 +248,7 @@ export const invoiceItemSchema = z.object({
   description: z.string().optional(),
   quantity: z.number().positive('Quantity must be positive'),
   rate: z.number().positive('Rate must be positive'),
-  // Flat discount amount (₹) applied after GST on the line
-  discount: z.number().min(0).default(0),
+  discount: z.number().min(0).max(100).default(0),
   gstRate: z.number().min(0).max(100).default(0),
 })
 
@@ -278,6 +277,7 @@ export const purchaseOrderSchema = z.object({
   expectedDate: z.string().or(z.date()).optional(),
   gstType: z.enum(['CGST_SGST', 'IGST', 'EXEMPT']).default('CGST_SGST'),
   notes: z.string().optional(),
+  terms: z.string().optional(),
   items: z.array(z.object({
     productId: z.string().min(1),
     description: z.string().optional(),
@@ -307,6 +307,7 @@ export const purchaseSchema = z.object({
     .optional(),
   paidAmount: z.number().min(0).default(0),
   notes: z.string().optional(),
+  terms: z.string().optional(),
   fromPoId: z.string().optional(),
   roundOff: z.number().default(0),
   items: z.array(purchaseItemSchema).min(1, 'At least one item required'),
@@ -317,7 +318,7 @@ export const quotationItemSchema = z.object({
   description: z.string().optional(),
   quantity: z.number().positive('Quantity must be positive'),
   rate: z.number().positive('Rate must be positive'),
-  discount: z.number().min(0, 'Discount cannot be negative').default(0),
+  discount: z.number().min(0).max(100).default(0),
   gstRate: z.number().min(0).max(100).default(0),
 })
 
@@ -339,11 +340,17 @@ export const quotationSchema = z.object({
 export const challanSchema = z.object({
   customerId: z.string().min(1, 'Customer required'),
   date: z.string().or(z.date()),
+  completionDate: z.string().or(z.date()).optional(),
   vehicleNo: z.string().optional(),
   driverName: z.string().optional(),
   destination: z.string().optional(),
   eWayBillNo: z.string().optional(),
   notes: z.string().optional(),
+  terms: z.string().optional(),
+  partyDetails: z.object({
+    buyer: partySnapshotSchema.optional(),
+    consignee: partySnapshotSchema.optional(),
+  }).optional(),
   items: z.array(z.object({
     productId: z.string().min(1),
     description: z.string().optional(),
@@ -376,7 +383,12 @@ export const businessSettingsSchema = z.object({
   quotationPrefix: z.string().default('QT'),
   purchaseOrderPrefix: z.string().default('PO'),
   challanPrefix: z.string().default('DC'),
-  termsCondition: z.string().optional(),
+  quotationTerms: z.string().optional(),
+  salesInvoiceTerms: z.string().optional(),
+  purchaseOrderTerms: z.string().optional(),
+  purchaseInvoiceTerms: z.string().optional(),
+  deliveryChallanTerms: z.string().optional(),
+  returnableChallanTerms: z.string().optional(),
   sidebarColor: z
     .string()
     .regex(/^#[0-9A-Fa-f]{6}$/, 'Enter a valid hex color (e.g. #0f172a)')

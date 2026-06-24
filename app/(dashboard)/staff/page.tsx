@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
+import { usePageCount } from '@/hooks/use-page-count'
 import { Plus, Search, Edit, Trash2, User } from 'lucide-react'
 import { getInitials } from '@/lib/utils'
 
@@ -31,6 +32,7 @@ export default function StaffPage() {
   const { toast } = useToast()
   const [staff, setStaff] = useState<StaffMember[]>([])
   const [total, setTotal] = useState(0)
+  usePageCount(`${total} member(s)`)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
@@ -91,7 +93,10 @@ export default function StaffPage() {
         const e = await res.json()
         throw new Error(formatApiError(e.error) || 'Failed')
       }
-      toast({ title: editing ? 'Staff updated' : 'Staff created' })
+      toast({
+        title: editing ? 'Staff updated' : 'Staff created',
+        description: editing ? 'Staff details saved successfully.' : undefined,
+      })
       setDialogOpen(false)
       fetchStaff()
     } catch (e: unknown) {
@@ -111,8 +116,7 @@ export default function StaffPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div><p className="text-muted-foreground">{total} member(s)</p></div>
+      <div className="flex items-center justify-end">
         <Button onClick={openNew}><Plus className="w-4 h-4 mr-2" />Add Staff</Button>
       </div>
 

@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { appendOrgFilter } from '@/lib/tenant'
 import { challanSchema } from '@/lib/validations'
 import { randomUUID } from 'crypto'
+import { buildDocumentNumberPrefix, documentSerialSubstringStart, nextDocumentNumber } from '@/lib/document-number'
 
 export async function GET(req: NextRequest) {
   const { error, organizationId } = await requirePermission('returnable-challans', 'view')
@@ -42,13 +43,13 @@ export async function POST(req: NextRequest) {
     const data = challanSchema.parse(body)
     await conn.beginTransaction()
 
+    const prefix = 'RC'
+    const numberPrefix = buildDocumentNumberPrefix(prefix, data.date)
     const [last] = await conn.execute(
-      'SELECT challan_no FROM returnable_challans WHERE organization_id = ? ORDER BY created_at DESC LIMIT 1',
-      [organizationId]
+      `SELECT challan_no FROM returnable_challans WHERE organization_id = ? AND challan_no LIKE ? ORDER BY CAST(SUBSTRING(challan_no, ?) AS UNSIGNED) DESC LIMIT 1`,
+      [organizationId, `${numberPrefix}%`, documentSerialSubstringStart(numberPrefix)]
     ) as any[]
-    let nextNum = 1
-    if (last[0]) { const m = last[0].challan_no.match(/\d+$/); if (m) nextNum = parseInt(m[0]) + 1 }
-    const challanNo = `RC${String(nextNum).padStart(4, '0')}`
+    const challanNo = nextDocumentNumber(prefix, data.date, last[0]?.challan_no)
 
     const id = randomUUID()
     await conn.execute(

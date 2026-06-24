@@ -3,7 +3,8 @@
 import * as React from "react"
 import type { ToastActionElement, ToastProps } from "@/components/ui/toast"
 
-import { CONSOLE_MESSAGE_DURATION_MS } from "@/components/shared/console-message"
+/** How long success/error toasts stay visible before auto-dismiss. */
+export const TOAST_VISIBLE_MS = 1000
 
 const TOAST_LIMIT = 1
 const TOAST_REMOVE_DELAY = 300
@@ -91,8 +92,18 @@ function toast({ ...props }: Toast) {
     type: "ADD_TOAST",
     toast: { ...props, id, open: true, onOpenChange: (open) => { if (!open) dismiss() } },
   })
-  setTimeout(() => dismiss(), CONSOLE_MESSAGE_DURATION_MS)
+  setTimeout(() => dismiss(), TOAST_VISIBLE_MS)
   return { id: id, dismiss, update }
+}
+
+/** Show a success toast, then navigate after it has been visible. */
+export function toastSuccessNavigate(
+  title: string,
+  onNavigate: () => void,
+  description?: string
+) {
+  toast({ title, description })
+  setTimeout(onNavigate, TOAST_VISIBLE_MS)
 }
 
 function useToast() {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import db from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { appendOrgFilter } from '@/lib/tenant'
+import { formatCategoryName, normalizeCategoryNameKey } from '@/lib/utils'
 import { randomUUID } from 'crypto'
 
 export async function GET(req: NextRequest) {
@@ -13,7 +14,7 @@ export async function GET(req: NextRequest) {
   appendOrgFilter(conditions, params, organizationId!)
   const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''
 
-  const [rows] = await db.execute(`SELECT * FROM categories ${where} ORDER BY name ASC`, params) as any[]
+  const [rows] = await db.execute(`SELECT * FROM categories ${where} ORDER BY BINARY name ASC`, params) as any[]
   return NextResponse.json(rows)
 }
 
@@ -22,11 +23,25 @@ export async function POST(req: NextRequest) {
   if (error) return error
   try {
     const { name, description } = await req.json()
-    if (!name) return NextResponse.json({ error: 'Name is required' }, { status: 400 })
+    const formattedName = formatCategoryName(String(name || ''))
+    if (!formattedName) return NextResponse.json({ error: 'Name is required' }, { status: 400 })
+
+    const conditions: string[] = []
+    const params: any[] = []
+    appendOrgFilter(conditions, params, organizationId!)
+    const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''
+    const [existing] = await db.execute(`SELECT name FROM categories ${where}`, params) as any[]
+
+    const newKey = normalizeCategoryNameKey(formattedName)
+    const duplicate = existing.find((row: { name: string }) => normalizeCategoryNameKey(row.name) === newKey)
+    if (duplicate) {
+      return NextResponse.json({ error: `Category "${duplicate.name}" already exists` }, { status: 400 })
+    }
+
     const id = randomUUID()
     await db.execute(
       'INSERT INTO categories (id, organization_id, name, description) VALUES (?, ?, ?, ?)',
-      [id, organizationId, name, description || null]
+      [id, organizationId, formattedName, description || null]
     )
     const [rows] = await db.execute(
       'SELECT * FROM categories WHERE id = ? AND organization_id = ?',

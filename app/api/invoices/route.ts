@@ -4,20 +4,22 @@ import { requirePermission } from '@/lib/api-auth'
 import { appendOrgFilter } from '@/lib/tenant'
 import { invoiceSchema } from '@/lib/validations'
 import { ensureInvoiceSchema } from '@/lib/ensure-invoice-schema'
-import { calculateGST, roundToNearestRupee, roundToTwo } from '@/lib/utils'
+import { roundToNearestRupee, roundToTwo } from '@/lib/utils'
+import { computeSalesDocumentItemTotals } from '@/lib/sales-document-totals'
 import { randomUUID } from 'crypto'
 import { apiErrorResponse } from '@/lib/api-error'
+import { buildDocumentNumberPrefix, documentSerialSubstringStart, nextDocumentNumber } from '@/lib/document-number'
 
 function computeItemTotals(item: any, gstType: string) {
-  // UI uses flat ₹ discount applied after GST on the line total
-  const taxable = roundToTwo((Number(item.quantity) || 0) * (Number(item.rate) || 0))
-  const gst = calculateGST(taxable, Number(item.gstRate) || 0, (gstType as any) || 'CGST_SGST')
-  const totalWithGst = roundToTwo(taxable + gst.total)
-  const discAmt = roundToTwo(
-    Math.min(Math.max(0, Number(item.discount) || 0), totalWithGst)
+  return computeSalesDocumentItemTotals(
+    {
+      quantity: Number(item.quantity) || 0,
+      rate: Number(item.rate) || 0,
+      discount: Number(item.discount) || 0,
+      gstRate: Number(item.gstRate) || 0,
+    },
+    (gstType as 'CGST_SGST' | 'IGST' | 'EXEMPT') || 'CGST_SGST'
   )
-  const total = roundToTwo(totalWithGst - discAmt)
-  return { taxable, cgst: gst.cgst, sgst: gst.sgst, igst: gst.igst, total, discAmt }
 }
 
 export async function GET(req: NextRequest) {
@@ -80,13 +82,12 @@ export async function POST(req: NextRequest) {
       [organizationId]
     ) as any[]
     const prefix = settings[0]?.invoice_prefix || 'INV'
+    const numberPrefix = buildDocumentNumberPrefix(prefix, data.date)
     const [lastInv] = await conn.execute(
-      'SELECT invoice_no FROM invoices WHERE organization_id = ? AND invoice_no LIKE ? ORDER BY created_at DESC LIMIT 1',
-      [organizationId, `${prefix}%`]
+      `SELECT invoice_no FROM invoices WHERE organization_id = ? AND invoice_no LIKE ? ORDER BY CAST(SUBSTRING(invoice_no, ?) AS UNSIGNED) DESC LIMIT 1`,
+      [organizationId, `${numberPrefix}%`, documentSerialSubstringStart(numberPrefix)]
     ) as any[]
-    let nextNum = 1
-    if (lastInv[0]) { const m = lastInv[0].invoice_no.match(/\d+$/); if (m) nextNum = parseInt(m[0]) + 1 }
-    const invoiceNo = `${prefix}${String(nextNum).padStart(4, '0')}`
+    const invoiceNo = nextDocumentNumber(prefix, data.date, lastInv[0]?.invoice_no)
 
     // Compute totals (match UI)
     let subtotal = 0, totalDiscount = 0, totalCgst = 0, totalSgst = 0, totalIgst = 0, grandTotal = 0

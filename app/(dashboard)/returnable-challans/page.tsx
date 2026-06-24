@@ -9,6 +9,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Plus, Search, Eye } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
+import { usePageCount } from '@/hooks/use-page-count'
 
 interface RetChallan {
   id: string; challan_no: string; date: string; customer_name: string; status: string
@@ -17,6 +18,7 @@ interface RetChallan {
 export default function ReturnableChallansPage() {
   const [challans, setChallans] = useState<RetChallan[]>([])
   const [total, setTotal] = useState(0)
+  usePageCount(`${total} challan(s)`)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
@@ -36,8 +38,7 @@ export default function ReturnableChallansPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div><p className="text-muted-foreground">{total} challan(s)</p></div>
+      <div className="flex items-center justify-end">
         <Link href="/returnable-challans/new"><Button><Plus className="w-4 h-4 mr-2" />New RC</Button></Link>
       </div>
 

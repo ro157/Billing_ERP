@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useToast } from '@/hooks/use-toast'
+import { usePageCount } from '@/hooks/use-page-count'
 import {
   Eye,
   Edit,
@@ -110,6 +111,7 @@ export default function PurchasesPage() {
   const { toast } = useToast()
   const [purchases, setPurchases] = useState<Purchase[]>([])
   const [total, setTotal] = useState(0)
+  usePageCount(`${total} purchase invoice(s)`)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [fromDate, setFromDate] = useState('')
@@ -259,10 +261,6 @@ export default function PurchasesPage() {
 
   return (
     <div className="space-y-4 md:space-y-6 min-w-0">
-      <div className="min-w-0">
-        <p className="text-sm sm:text-base text-muted-foreground">{total} purchase(s)</p>
-      </div>
-
       <ListPageToolbar
         searchPlaceholder="Vendor or purchase no..."
         search={search}

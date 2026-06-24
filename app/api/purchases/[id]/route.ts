@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import db from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { purchaseSchema } from '@/lib/validations'
-import { ensurePurchaseSchema } from '@/lib/ensure-purchase-schema'
+import { ensurePurchaseSchema, ensureDocumentTermsColumns } from '@/lib/ensure-purchase-schema'
 import { computePurchaseItemTotals } from '@/lib/purchase-totals'
 import { roundToTwo } from '@/lib/utils'
 import { randomUUID } from 'crypto'
@@ -75,6 +75,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   const conn = await db.getConnection()
   try {
     await ensurePurchaseSchema()
+    await ensureDocumentTermsColumns()
     const body = await req.json()
 
     if (!body.items || !Array.isArray(body.items)) {
@@ -155,12 +156,12 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     await conn.execute(
       `UPDATE purchases SET vendor_id=?, date=?, due_date=?, gst_type=?, bill_no=?, bill_date=?,
         subtotal=?, discount_amount=?, cgst_amount=?, sgst_amount=?, igst_amount=?, tax_amount=?, round_off=?, total_amount=?,
-        paid_amount=?, balance_amount=?, payment_mode=?, notes=?, status=?
+        paid_amount=?, balance_amount=?, payment_mode=?, notes=?, terms=?, status=?
        WHERE id=? AND organization_id = ?`,
       [data.vendorId, data.date, data.dueDate || null,
        gstType, data.billNo || null, data.billDate || null,
        subtotal, totalDiscount, totalCgst, totalSgst, totalIgst, totalCgst + totalSgst + totalIgst, roundOff, finalTotal,
-       paidAmount, balanceAmount, data.paymentMode || null, data.notes || null, status,
+       paidAmount, balanceAmount, data.paymentMode || null, data.notes || null, data.terms || null, status,
        params.id, organizationId]
     )
 

@@ -48,6 +48,19 @@ export async function ensureBusinessSettingsBankingColumns(): Promise<void> {
     `ALTER TABLE business_settings ADD COLUMN sidebar_color VARCHAR(7) NULL DEFAULT '#0f172a' AFTER logo`
   )
 
+  const documentTermsColumns = [
+    'quotation_terms',
+    'sales_invoice_terms',
+    'purchase_order_terms',
+    'purchase_invoice_terms',
+    'delivery_challan_terms',
+    'returnable_challan_terms',
+  ] as const
+
+  for (const column of documentTermsColumns) {
+    await runAlter(`ALTER TABLE business_settings ADD COLUMN ${column} TEXT NULL AFTER terms_condition`)
+  }
+
   schemaReady = true
 }
 

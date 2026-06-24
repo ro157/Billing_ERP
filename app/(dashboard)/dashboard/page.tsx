@@ -31,8 +31,8 @@ interface ChartRow {
 }
 
 interface DashboardStats {
-  salesToday: { amount: number; count: number }
-  purchasesToday: { amount: number; count: number }
+  salesThisMonth: { amount: number; count: number }
+  purchasesThisMonth: { amount: number; count: number }
   pendingQuotations: number
   lowStockCount: number
   chartType: 'monthly' | 'daily'
@@ -149,12 +149,14 @@ function getYearOptions() {
 }
 
 export default function DashboardPage() {
-  const currentYear = new Date().getFullYear()
+  const now = new Date()
+  const currentYear = now.getFullYear()
+  const currentMonth = String(now.getMonth() + 1).padStart(2, '0')
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [chartLoading, setChartLoading] = useState(false)
   const [year, setYear] = useState(String(currentYear))
-  const [month, setMonth] = useState('ALL')
+  const [month, setMonth] = useState(currentMonth)
 
   const isFirstLoad = useRef(true)
 
@@ -223,23 +225,19 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-4 md:space-y-6 min-w-0">
-      <div>
-        <p className="text-sm text-muted-foreground">Business overview for today</p>
-      </div>
-
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         <StatCard
-          title="Sales Today"
-          value={formatCurrency(stats.salesToday.amount)}
-          sub={`${stats.salesToday.count} invoice(s)`}
+          title="Sales this month"
+          value={formatCurrency(stats.salesThisMonth.amount)}
+          sub={`${stats.salesThisMonth.count} invoice(s)`}
           icon={TrendingUp}
           color="bg-blue-500"
           href="/billing"
         />
         <StatCard
-          title="Purchases Today"
-          value={formatCurrency(stats.purchasesToday.amount)}
-          sub={`${stats.purchasesToday.count} bill(s)`}
+          title="Purchases this month"
+          value={formatCurrency(stats.purchasesThisMonth.amount)}
+          sub={`${stats.purchasesThisMonth.count} bill(s)`}
           icon={ShoppingCart}
           color="bg-purple-500"
           href="/purchases"

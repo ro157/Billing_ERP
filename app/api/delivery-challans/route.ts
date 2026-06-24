@@ -4,6 +4,8 @@ import { requirePermission } from '@/lib/api-auth'
 import { appendOrgFilter } from '@/lib/tenant'
 import { challanSchema } from '@/lib/validations'
 import { randomUUID } from 'crypto'
+import { buildDocumentNumberPrefix, documentSerialSubstringStart, nextDocumentNumber } from '@/lib/document-number'
+import { ensureDeliveryChallanSchema } from '@/lib/ensure-delivery-challan-schema'
 
 export async function GET(req: NextRequest) {
   const { error, organizationId } = await requirePermission('delivery-challans', 'view')
@@ -41,6 +43,7 @@ export async function POST(req: NextRequest) {
 
   const conn = await db.getConnection()
   try {
+    await ensureDeliveryChallanSchema()
     const body = await req.json()
     const data = challanSchema.parse(body)
     await conn.beginTransaction()
@@ -50,18 +53,30 @@ export async function POST(req: NextRequest) {
       [organizationId]
     ) as any[]
     const prefix = settings[0]?.challan_prefix || 'DC'
+    const numberPrefix = buildDocumentNumberPrefix(prefix, data.date)
     const [last] = await conn.execute(
-      'SELECT challan_no FROM delivery_challans WHERE organization_id = ? AND challan_no LIKE ? ORDER BY created_at DESC LIMIT 1',
-      [organizationId, `${prefix}%`]
+      `SELECT challan_no FROM delivery_challans WHERE organization_id = ? AND challan_no LIKE ? ORDER BY CAST(SUBSTRING(challan_no, ?) AS UNSIGNED) DESC LIMIT 1`,
+      [organizationId, `${numberPrefix}%`, documentSerialSubstringStart(numberPrefix)]
     ) as any[]
-    let nextNum = 1
-    if (last[0]) { const m = last[0].challan_no.match(/\d+$/); if (m) nextNum = parseInt(m[0]) + 1 }
-    const challanNo = `${prefix}${String(nextNum).padStart(4, '0')}`
+    const challanNo = nextDocumentNumber(prefix, data.date, last[0]?.challan_no)
+    const partyDetailsJson = data.partyDetails ? JSON.stringify(data.partyDetails) : null
 
     const id = randomUUID()
     await conn.execute(
-      'INSERT INTO delivery_challans (id, organization_id, challan_no, customer_id, date, vehicle_no, notes, status) VALUES (?,?,?,?,?,?,?,?)',
-      [id, organizationId, challanNo, data.customerId, data.date, data.vehicleNo || null, data.notes || null, 'PENDING']
+      `INSERT INTO delivery_challans (
+        id, organization_id, challan_no, customer_id, date, completion_date, party_details, terms, status
+      ) VALUES (?,?,?,?,?,?,?,?,?)`,
+      [
+        id,
+        organizationId,
+        challanNo,
+        data.customerId,
+        data.date,
+        data.completionDate || null,
+        partyDetailsJson,
+        data.terms || null,
+        'PENDING',
+      ]
     )
 
     for (const item of data.items) {

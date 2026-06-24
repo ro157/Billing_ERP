@@ -12,18 +12,20 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
-import { useToast } from '@/hooks/use-toast'
+import { useToast, toastSuccessNavigate } from '@/hooks/use-toast'
+import { useDefaultDocumentTerms } from '@/hooks/use-default-document-terms'
+import { DocumentTermsField } from '@/components/shared/document-terms-field'
 import Link from 'next/link'
 import { Plus, Trash2, ArrowLeft, Loader2, Package } from 'lucide-react'
 import {
   formatCurrency,
-  calculateGST,
   roundToTwo,
   roundToNearestRupee,
   computeRoundOff,
   GST_RATES,
   cn,
 } from '@/lib/utils'
+import { computeSalesDocumentLineTotals, normalizeProductDiscountPercent } from '@/lib/sales-document-totals'
 import { parseQuotationPartyDetails } from '@/lib/quotation-party'
 import { ContactFieldInputs } from '@/components/shared/contact-field-inputs'
 import {
@@ -41,6 +43,7 @@ interface Product {
   gst_rate: number
   hsn_code?: string | null
   sac_code?: string | null
+  discount?: number | string | null
   current_stock: number
   low_stock_alert?: number | null
 }
@@ -58,18 +61,18 @@ function formatHsnSac(hsn: string | null | undefined, sac: string | null | undef
 function computeInvoiceLineTotals(
   qty: number,
   rate: number,
-  discountFlat: number,
+  discountPercent: number,
   gstRate: number,
   gstType: InvoiceInput['gstType']
 ) {
-  const taxableGross = roundToTwo((qty || 0) * (rate || 0))
-  const gst = calculateGST(taxableGross, gstRate || 0, gstType || 'CGST_SGST')
-  const totalWithGst = roundToTwo(taxableGross + gst.total)
-  const discountAmount = roundToTwo(
-    Math.min(Math.max(0, Number(discountFlat) || 0), totalWithGst)
-  )
-  const finalAmount = roundToTwo(totalWithGst - discountAmount)
-  return { taxableGross, discountAmount, gst, totalWithGst, finalAmount }
+  const line = computeSalesDocumentLineTotals(qty, rate, discountPercent, gstRate, gstType || 'CGST_SGST')
+  return {
+    taxableGross: line.taxableGross,
+    discountAmount: line.discountAmount,
+    gst: line.gst,
+    totalWithGst: line.totalWithGst,
+    finalAmount: line.finalAmount,
+  }
 }
 
 interface Customer {
@@ -329,6 +332,12 @@ export function InvoiceForm({ invoiceId }: { invoiceId?: string }) {
   const gstType = form.watch('gstType')
   const paymentMode = form.watch('paymentMode')
   const items = form.watch('items')
+
+  const applyDefaultTerms = useCallback(
+    (terms: string) => form.setValue('terms', terms),
+    [form]
+  )
+  useDefaultDocumentTerms('sales-invoice', !isEdit, applyDefaultTerms)
 
   const filteredCustomers = useMemo(() => {
     const q = buyerFields.name.trim().toLowerCase()
@@ -669,6 +678,7 @@ export function InvoiceForm({ invoiceId }: { invoiceId?: string }) {
     setValue(`items.${index}.productId`, productId, { shouldValidate: true })
     setValue(`items.${index}.rate`, Number(p.selling_price))
     setValue(`items.${index}.gstRate`, Number(p.gst_rate))
+    setValue(`items.${index}.discount`, normalizeProductDiscountPercent(p.discount))
     setValue(`items.${index}.description`, p.description || p.name)
     setItemMeta((prev) => ({
       ...prev,
@@ -735,8 +745,10 @@ export function InvoiceForm({ invoiceId }: { invoiceId?: string }) {
         const err = await res.json()
         throw new Error(typeof err.error === 'string' ? err.error : 'Failed to save invoice')
       }
-      toast({ title: isEdit ? 'Invoice updated successfully' : 'Invoice created successfully' })
-      router.push('/billing')
+      toastSuccessNavigate(
+        isEdit ? 'Invoice updated successfully' : 'Invoice created successfully',
+        () => router.push('/billing')
+      )
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Error'
       toast({ title: 'Error', description: message, variant: 'destructive' })
@@ -1024,16 +1036,17 @@ export function InvoiceForm({ invoiceId }: { invoiceId?: string }) {
                         </Select>
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-xs">Discount</Label>
+                        <Label className="text-xs">Discount %</Label>
                         <Input
                           type="number"
                           min="0"
+                          max="100"
                           step="0.01"
                           className="h-9 no-spinner"
                           value={Number.isFinite(item?.discount) ? item.discount : ''}
                           onChange={(e) => {
                             const raw = e.target.value
-                            const num = raw === '' ? 0 : roundToTwo(parseFloat(raw) || 0)
+                            const num = raw === '' ? 0 : Math.min(100, Math.max(0, roundToTwo(parseFloat(raw) || 0)))
                             setValue(`items.${i}.discount`, num, { shouldDirty: true })
                           }}
                         />
@@ -1062,69 +1075,80 @@ export function InvoiceForm({ invoiceId }: { invoiceId?: string }) {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="p-4 space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,220px)_1fr] gap-4">
-              <div className="space-y-2">
-                <Label>Paid Amount (₹)</Label>
-                <Input type="number" step="0.01" className="h-9" {...form.register('paidAmount', { valueAsNumber: true })} />
-              </div>
-              <div className="space-y-2">
-                <Label>Notes</Label>
-                <Input className="h-9" placeholder="Optional notes..." {...form.register('notes')} />
-              </div>
-            </div>
-            <Separator />
-            <div className="flex justify-end">
-              <div className="w-full sm:w-64 space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Subtotal</span>
-                  <span>{formatCurrency(computedTotals.subtotal)}</span>
-                </div>
-                {gstType === 'CGST_SGST' && (
-                  <>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">CGST</span>
-                      <span>{formatCurrency(computedTotals.totalCgst)}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">SGST</span>
-                      <span>{formatCurrency(computedTotals.totalSgst)}</span>
-                    </div>
-                  </>
-                )}
-                {gstType === 'IGST' && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">IGST</span>
-                    <span>{formatCurrency(computedTotals.totalIgst)}</span>
-                  </div>
-                )}
-                {computedTotals.totalDiscount > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Total Discount</span>
-                    <span className="text-orange-600">-{formatCurrency(computedTotals.totalDiscount)}</span>
-                  </div>
-                )}
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Round Off</span>
-                  <span className="font-medium">
-                    {computedTotals.roundOff >= 0 ? '+' : ''}
-                    {formatCurrency(computedTotals.roundOff)}
-                  </span>
-                </div>
-                <Separator />
-                <div className="flex justify-between font-bold text-base">
-                  <span>Grand Total</span>
-                  <span>{formatCurrency(computedTotals.totalAmount)}</span>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,380px)] lg:items-start">
+          <Card className="h-full">
+            <CardContent className="p-4">
+              <DocumentTermsField register={form.register} />
+            </CardContent>
+          </Card>
 
-        <div className="flex flex-col-reverse sm:flex-row justify-end gap-3">
-          <Button type="button" variant="outline" onClick={() => router.back()}>Cancel</Button>
-          <Button type="submit" disabled={saving}>
+          <Card>
+            <CardContent className="p-4 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Paid Amount (₹)</Label>
+                  <Input type="number" step="0.01" className="h-9" {...form.register('paidAmount', { valueAsNumber: true })} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Notes</Label>
+                  <Input className="h-9" placeholder="Optional notes..." {...form.register('notes')} />
+                </div>
+              </div>
+              <Separator />
+              <div className="space-y-2">
+                <p className="text-base font-semibold">Summary</p>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Subtotal</span>
+                    <span>{formatCurrency(computedTotals.subtotal)}</span>
+                  </div>
+                  {gstType === 'CGST_SGST' && (
+                    <>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">CGST</span>
+                        <span>{formatCurrency(computedTotals.totalCgst)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">SGST</span>
+                        <span>{formatCurrency(computedTotals.totalSgst)}</span>
+                      </div>
+                    </>
+                  )}
+                  {gstType === 'IGST' && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">IGST</span>
+                      <span>{formatCurrency(computedTotals.totalIgst)}</span>
+                    </div>
+                  )}
+                  {computedTotals.totalDiscount > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Total Discount</span>
+                      <span className="text-orange-600">-{formatCurrency(computedTotals.totalDiscount)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Round Off</span>
+                    <span className="font-medium">
+                      {computedTotals.roundOff >= 0 ? '+' : ''}
+                      {formatCurrency(computedTotals.roundOff)}
+                    </span>
+                  </div>
+                  <Separator />
+                  <div className="flex justify-between font-bold text-base">
+                    <span>Grand Total</span>
+                    <span className="text-primary">{formatCurrency(computedTotals.totalAmount)}</span>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 sm:flex sm:justify-end">
+          <Button type="button" variant="outline" onClick={() => router.back()} className="h-9 w-full sm:w-auto">
+            Cancel
+          </Button>
+          <Button type="submit" disabled={saving} className="h-9 w-full sm:w-auto">
             {saving ? (
               <><Loader2 className="w-4 h-4 mr-2 animate-spin" />{isEdit ? 'Updating...' : 'Creating...'}</>
             ) : (

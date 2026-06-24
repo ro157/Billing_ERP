@@ -14,6 +14,7 @@ import { ThemeModeToggle } from '@/components/layout/theme-mode-toggle'
 export function Header() {
   const pathname = usePathname()
   const pageTitle = getPageTitleFromPath(pathname)
+  const pageCountLabel = useAppStore((s) => s.pageCountLabel)
   const { toggleSidebar, mobileSidebarOpen, setMobileSidebarOpen } = useAppStore()
   const { data: session } = useSession()
   const [dropdownOpen, setDropdownOpen] = useState(false)
@@ -38,12 +39,17 @@ export function Header() {
   }
 
   return (
-    <header className="sticky top-0 z-20 flex h-14 md:h-16 items-center justify-between gap-3 border-b border-border bg-background px-3 md:px-4 shadow-sm">
+    <header className="sticky top-0 z-20 flex min-h-14 md:min-h-16 items-center justify-between gap-3 border-b border-border bg-background px-3 md:px-4 py-2 shadow-sm">
       <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
-        <Button variant="ghost" size="icon" onClick={handleMenuClick} aria-label="Toggle menu" className="shrink-0">
+        <Button variant="ghost" size="icon" onClick={handleMenuClick} aria-label="Toggle menu" className="shrink-0 self-start mt-0.5">
           <Menu className="h-5 w-5" />
         </Button>
-        <h1 className="truncate text-base font-semibold text-foreground sm:text-lg">{pageTitle}</h1>
+        <div className="min-w-0">
+          <h1 className="truncate text-base font-semibold text-foreground sm:text-lg leading-tight">{pageTitle}</h1>
+          {pageCountLabel && (
+            <p className="truncate text-xs text-muted-foreground sm:text-sm">{pageCountLabel}</p>
+          )}
+        </div>
         {session?.user?.isSuperAdmin && (
           <Link
             href="/superadmin"

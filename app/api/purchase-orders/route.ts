@@ -3,6 +3,8 @@ import db from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { appendOrgFilter } from '@/lib/tenant'
 import { purchaseOrderSchema } from '@/lib/validations'
+import { ensureDocumentTermsColumns } from '@/lib/ensure-purchase-schema'
+import { buildDocumentNumberPrefix, documentSerialSubstringStart, nextDocumentNumber } from '@/lib/document-number'
 import { randomUUID } from 'crypto'
 
 function computeItemTotals(item: any, gstType = 'CGST_SGST') {
@@ -22,6 +24,8 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const search = searchParams.get('search') || ''
   const status = searchParams.get('status')
+  const fromDate = searchParams.get('fromDate')
+  const toDate = searchParams.get('toDate')
   const page = parseInt(searchParams.get('page') || '1')
   const limit = parseInt(searchParams.get('limit') || '20')
   const offset = (page - 1) * limit
@@ -30,6 +34,8 @@ export async function GET(req: NextRequest) {
   const params: any[] = []
   if (search) { conditions.push('(po.po_no LIKE ? OR v.name LIKE ?)'); const s = `%${search}%`; params.push(s, s) }
   if (status) { conditions.push('po.status = ?'); params.push(status) }
+  if (fromDate) { conditions.push('po.date >= ?'); params.push(fromDate) }
+  if (toDate) { conditions.push('po.date <= ?'); params.push(toDate) }
   appendOrgFilter(conditions, params, organizationId!, 'po')
 
   const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''
@@ -51,6 +57,7 @@ export async function POST(req: NextRequest) {
 
   const conn = await db.getConnection()
   try {
+    await ensureDocumentTermsColumns()
     const body = await req.json()
     const data = purchaseOrderSchema.parse(body)
     await conn.beginTransaction()
@@ -60,13 +67,12 @@ export async function POST(req: NextRequest) {
       [organizationId]
     ) as any[]
     const prefix = settings[0]?.purchase_order_prefix || 'PO'
+    const numberPrefix = buildDocumentNumberPrefix(prefix, data.date)
     const [last] = await conn.execute(
-      'SELECT po_no FROM purchase_orders WHERE organization_id = ? AND po_no LIKE ? ORDER BY created_at DESC LIMIT 1',
-      [organizationId, `${prefix}%`]
+      `SELECT po_no FROM purchase_orders WHERE organization_id = ? AND po_no LIKE ? ORDER BY CAST(SUBSTRING(po_no, ?) AS UNSIGNED) DESC LIMIT 1`,
+      [organizationId, `${numberPrefix}%`, documentSerialSubstringStart(numberPrefix)]
     ) as any[]
-    let nextNum = 1
-    if (last[0]) { const m = last[0].po_no.match(/\d+$/); if (m) nextNum = parseInt(m[0]) + 1 }
-    const poNo = `${prefix}${String(nextNum).padStart(4, '0')}`
+    const poNo = nextDocumentNumber(prefix, data.date, last[0]?.po_no)
 
     let subtotal = 0, totalDiscount = 0, totalTaxable = 0, totalCgst = 0, totalSgst = 0, totalIgst = 0, grandTotal = 0
     const itemsWithTotals = data.items.map((item: any) => {
@@ -79,11 +85,11 @@ export async function POST(req: NextRequest) {
     const id = randomUUID()
     await conn.execute(
       `INSERT INTO purchase_orders (id, organization_id, po_no, vendor_id, date, expected_date, subtotal,
-        discount_amount, tax_amount, total_amount, notes, status)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+        discount_amount, tax_amount, total_amount, notes, terms, status)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [id, organizationId, poNo, data.vendorId, data.date, data.expectedDate || null,
        subtotal, totalDiscount, totalCgst + totalSgst + totalIgst, grandTotal,
-       data.notes || null, 'PENDING']
+       data.notes || null, data.terms || null, 'PENDING']
     )
 
     for (const item of itemsWithTotals) {

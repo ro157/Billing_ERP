@@ -3,11 +3,12 @@ import db from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { appendOrgFilter } from '@/lib/tenant'
 import { purchaseSchema } from '@/lib/validations'
-import { ensurePurchaseSchema } from '@/lib/ensure-purchase-schema'
+import { ensurePurchaseSchema, ensureDocumentTermsColumns } from '@/lib/ensure-purchase-schema'
 import { computePurchaseItemTotals } from '@/lib/purchase-totals'
 import { roundToTwo } from '@/lib/utils'
 import { randomUUID } from 'crypto'
 import { apiErrorResponse } from '@/lib/api-error'
+import { buildDocumentNumberPrefix, documentSerialSubstringStart, nextDocumentNumber } from '@/lib/document-number'
 
 export async function GET(req: NextRequest) {
   const { error, organizationId } = await requirePermission('purchases', 'view')
@@ -56,19 +57,19 @@ export async function POST(req: NextRequest) {
   const conn = await db.getConnection()
   try {
     await ensurePurchaseSchema()
+    await ensureDocumentTermsColumns()
     const body = await req.json()
     const data = purchaseSchema.parse(body)
     const gstType = data.gstType
     await conn.beginTransaction()
 
     const prefix = 'PUR'
+    const numberPrefix = buildDocumentNumberPrefix(prefix, data.date)
     const [last] = await conn.execute(
-      'SELECT purchase_no FROM purchases WHERE organization_id = ? AND purchase_no LIKE ? ORDER BY created_at DESC LIMIT 1',
-      [organizationId, `${prefix}%`]
+      `SELECT purchase_no FROM purchases WHERE organization_id = ? AND purchase_no LIKE ? ORDER BY CAST(SUBSTRING(purchase_no, ?) AS UNSIGNED) DESC LIMIT 1`,
+      [organizationId, `${numberPrefix}%`, documentSerialSubstringStart(numberPrefix)]
     ) as any[]
-    let nextNum = 1
-    if (last[0]) { const m = last[0].purchase_no.match(/\d+$/); if (m) nextNum = parseInt(m[0]) + 1 }
-    const purchaseNo = `${prefix}${String(nextNum).padStart(4, '0')}`
+    const purchaseNo = nextDocumentNumber(prefix, data.date, last[0]?.purchase_no)
 
     let subtotal = 0,
       totalDiscount = 0,
@@ -98,13 +99,13 @@ export async function POST(req: NextRequest) {
     await conn.execute(
       `INSERT INTO purchases (id, organization_id, purchase_no, vendor_id, date, due_date, gst_type, bill_no, bill_date,
         subtotal, discount_amount, cgst_amount, sgst_amount, igst_amount, tax_amount, round_off, total_amount,
-        paid_amount, balance_amount, payment_mode, notes, status)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        paid_amount, balance_amount, payment_mode, notes, terms, status)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [id, organizationId, purchaseNo, data.vendorId, data.date, data.dueDate || null,
        gstType, data.billNo || null, data.billDate || null,
        subtotal, totalDiscount, totalCgst, totalSgst, totalIgst, totalCgst + totalSgst + totalIgst, roundOff, finalTotal,
        data.paidAmount, finalTotal - data.paidAmount,
-       data.paymentMode || null, data.notes || null,
+       data.paymentMode || null, data.notes || null, data.terms || null,
        finalTotal - data.paidAmount <= 0 ? 'PAID' : data.paidAmount > 0 ? 'PARTIAL' : 'PENDING']
     )
 

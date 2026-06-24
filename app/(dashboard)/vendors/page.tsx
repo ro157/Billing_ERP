@@ -12,6 +12,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useToast } from '@/hooks/use-toast'
+import { usePageCount } from '@/hooks/use-page-count'
 import { Edit, Eye, Trash2, Truck, MapPin } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 import { sanitizeGstinInput, sanitizeMobileInput } from '@/lib/field-validation'
@@ -119,6 +120,7 @@ export default function VendorsPage() {
   const { toast } = useToast()
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [total, setTotal] = useState(0)
+  usePageCount(`${total} vendor(s)`)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
@@ -223,7 +225,10 @@ export default function VendorsPage() {
         toast({ title: 'Error', description: formatApiError(err.error), variant: 'destructive' })
         return
       }
-      toast({ title: editing ? 'Vendor updated' : 'Vendor created' })
+      toast({
+        title: editing ? 'Vendor updated' : 'Vendor created',
+        description: editing ? 'Vendor details saved successfully.' : undefined,
+      })
       setDialogOpen(false)
       fetchVendors()
     } catch (e: unknown) {
@@ -247,10 +252,6 @@ export default function VendorsPage() {
 
   return (
     <div className="space-y-4 md:space-y-6 min-w-0">
-      <div className="min-w-0">
-        <p className="text-sm sm:text-base text-muted-foreground">{total} vendor(s)</p>
-      </div>
-
       <ListPageToolbar
         searchPlaceholder="Search vendors..."
         search={search}
