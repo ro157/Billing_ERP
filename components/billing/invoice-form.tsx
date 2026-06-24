@@ -715,7 +715,7 @@ export function InvoiceForm({ invoiceId }: { invoiceId?: string }) {
 
     return firstPartyValidationError([
       { fields: buyerFields, label: 'Buyer' },
-      { fields: consigneeFields, label: 'Consignee' },
+      { fields: consigneeFields, label: 'Consignee'},
     ])
   }
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
 import nodemailer from 'nodemailer';
 import crypto from 'crypto';
+import { OTP_EXPIRY_MS } from '@/lib/auth-otp';
 
 export async function POST(request: NextRequest) {
   try {
@@ -28,8 +29,8 @@ export async function POST(request: NextRequest) {
     // Generate 5-digit OTP
     const otp = crypto.randomInt(10000, 99999).toString();
 
-    // Set expiry to 10 minutes from now
-    const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+    // Set expiry to 30 seconds from now
+    const otpExpiry = new Date(Date.now() + OTP_EXPIRY_MS);
 
     // Update user with OTP and expiry
     try {
@@ -82,7 +83,7 @@ export async function POST(request: NextRequest) {
           <div style="font-size: 24px; font-weight: bold; color: #333; text-align: center; padding: 20px; border: 2px solid #ddd; border-radius: 5px;">
             ${otp}
           </div>
-          <p>This OTP will expire in 10 minutes.</p>
+          <p>This OTP will expire in 30 seconds.</p>
           <p>If you didn't request this, please ignore this email.</p>
         </div>
       `,

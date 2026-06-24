@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
+import { PASSWORD_RESET_WINDOW_MS } from '@/lib/auth-otp';
 
 export async function POST(request: NextRequest) {
   try {
@@ -42,7 +43,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'OTP has expired' }, { status: 400 });
     }
 
-    // OTP is valid, return success
+    const passwordResetExpiry = new Date(Date.now() + PASSWORD_RESET_WINDOW_MS);
+    await db.execute('UPDATE users SET otp_expiry = ? WHERE email = ?', [
+      passwordResetExpiry,
+      email,
+    ]);
+
     return NextResponse.json({ message: 'OTP verified successfully' });
   } catch (error) {
     console.error('Verify OTP error:', error);
