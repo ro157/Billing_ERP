@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import db from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
+import { returnableChallanSchema } from '@/lib/validations'
+import { ensureReturnableChallanSchema } from '@/lib/ensure-returnable-challan-schema'
+import { computeSalesDocumentItemTotals } from '@/lib/sales-document-totals'
+import { randomUUID } from 'crypto'
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const { error, organizationId } = await requirePermission('returnable-challans', 'view')
   if (error) return error
+
+  await ensureReturnableChallanSchema()
 
   const [rows] = await db.execute(
     'SELECT rc.*, c.name as customer_name FROM returnable_challans rc LEFT JOIN customers c ON rc.customer_id = c.id WHERE rc.id = ? AND rc.organization_id = ?',
@@ -12,32 +18,116 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   ) as any[]
   if (!rows[0]) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  const [items] = await db.execute('SELECT * FROM returnable_challan_items WHERE challan_id = ?', [params.id]) as any[]
+  const [items] = await db.execute(
+    'SELECT * FROM returnable_challan_items WHERE challan_id = ? ORDER BY id',
+    [params.id]
+  ) as any[]
   return NextResponse.json({ ...rows[0], items })
 }
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
   const { error, organizationId } = await requirePermission('returnable-challans', 'edit')
   if (error) return error
+
+  const conn = await db.getConnection()
   try {
-    const { status, notes } = await req.json()
-    const [existing] = await db.execute(
+    await ensureReturnableChallanSchema()
+    const body = await req.json()
+    const data = returnableChallanSchema.parse(body)
+
+    const [existingRows] = await conn.execute(
       'SELECT id FROM returnable_challans WHERE id = ? AND organization_id = ?',
       [params.id, organizationId]
     ) as any[]
-    if (!existing[0]) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    if (!existingRows[0]) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-    await db.execute(
-      'UPDATE returnable_challans SET status=COALESCE(?,status), notes=COALESCE(?,notes) WHERE id=? AND organization_id = ?',
-      [status||null, notes||null, params.id, organizationId]
+    const [existingItems] = await conn.execute(
+      'SELECT product_id, quantity_returned FROM returnable_challan_items WHERE challan_id = ?',
+      [params.id]
+    ) as any[]
+    const returnedByProduct = new Map<string, number>()
+    for (const row of existingItems) {
+      if (row.product_id) {
+        returnedByProduct.set(row.product_id, Number(row.quantity_returned) || 0)
+      }
+    }
+
+    await conn.beginTransaction()
+
+    const partyDetailsJson = data.partyDetails ? JSON.stringify(data.partyDetails) : null
+
+    await conn.execute(
+      `UPDATE returnable_challans SET customer_id=?, date=?, return_date=?, party_details=?, terms=?, include_pricing=?
+       WHERE id=? AND organization_id = ?`,
+      [
+        data.customerId,
+        data.date,
+        data.completionDate || null,
+        partyDetailsJson,
+        data.terms || null,
+        data.includePricing ? 1 : 0,
+        params.id,
+        organizationId,
+      ]
     )
+
+    await conn.execute('DELETE FROM returnable_challan_items WHERE challan_id = ?', [params.id])
+
+    for (const item of data.items) {
+      let productName = item.description || 'Item'
+      if (item.productId) {
+        const [prod] = await conn.execute(
+          'SELECT name FROM products WHERE id = ? AND organization_id = ?',
+          [item.productId, organizationId]
+        ) as any[]
+        if (prod[0]) productName = prod[0].name
+      }
+      const rate = data.includePricing ? item.rate || 0 : 0
+      const discount = data.includePricing ? item.discount || 0 : 0
+      const gstRate = data.includePricing ? item.gstRate || 0 : 0
+      const totals = computeSalesDocumentItemTotals(
+        { quantity: item.quantity, rate, discount, gstRate },
+        'CGST_SGST'
+      )
+      const qtyReturned = item.productId ? returnedByProduct.get(item.productId) || 0 : 0
+      await conn.execute(
+        `INSERT INTO returnable_challan_items (
+          id, challan_id, product_id, description, quantity_issued, quantity_returned, rate, discount, gst_rate, gst_amount, amount
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+        [
+          randomUUID(),
+          params.id,
+          item.productId || null,
+          item.description || productName,
+          item.quantity,
+          qtyReturned,
+          rate,
+          discount,
+          gstRate,
+          totals.cgst + totals.sgst + totals.igst,
+          totals.total,
+        ]
+      )
+    }
+
+    await conn.commit()
     const [rows] = await db.execute(
       'SELECT rc.*, c.name as customer_name FROM returnable_challans rc LEFT JOIN customers c ON rc.customer_id = c.id WHERE rc.id = ? AND rc.organization_id = ?',
       [params.id, organizationId]
     ) as any[]
-    return NextResponse.json(rows[0])
-  } catch {
+    const [items] = await db.execute(
+      'SELECT * FROM returnable_challan_items WHERE challan_id = ? ORDER BY id',
+      [params.id]
+    ) as any[]
+    return NextResponse.json({ ...rows[0], items })
+  } catch (err: unknown) {
+    await conn.rollback()
+    const e = err as { name?: string; errors?: unknown }
+    if (e.name === 'ZodError') return NextResponse.json({ error: e.errors }, { status: 400 })
+    console.error('PUT /api/returnable-challans/[id]:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  } finally {
+    conn.release()
   }
 }
 

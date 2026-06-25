@@ -1005,10 +1005,6 @@ export function QuotationForm({ mode, quotationId }: QuotationFormProps) {
                 <span className="text-muted-foreground">Taxable Amount</span>
                 <span className="font-medium">{formatCurrency(summary.taxableTotal)}</span>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Total Discount</span>
-                <span className="font-medium text-orange-600">-{formatCurrency(summary.totalDiscount)}</span>
-              </div>
               {gstType === 'CGST_SGST' && (
                 <>
                   <div className="flex justify-between text-sm">
@@ -1025,6 +1021,12 @@ export function QuotationForm({ mode, quotationId }: QuotationFormProps) {
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">IGST</span>
                   <span>{formatCurrency(summary.igst)}</span>
+                </div>
+              )}
+              {summary.totalDiscount > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Total Discount</span>
+                  <span className="font-medium text-orange-600">-{formatCurrency(summary.totalDiscount)}</span>
                 </div>
               )}
               <div className="flex justify-between text-sm">

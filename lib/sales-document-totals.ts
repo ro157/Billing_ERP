@@ -11,7 +11,7 @@ export function normalizeProductDiscountPercent(
   return Math.min(Math.max(0, n), 100)
 }
 
-/** Quotation & sales invoice line totals — discount is % on gross (qty × rate) before GST. */
+/** Quotation & sales document line totals — discount % is applied on amount after GST. */
 export function computeSalesDocumentLineTotals(
   qty: number,
   rate: number,
@@ -21,17 +21,18 @@ export function computeSalesDocumentLineTotals(
 ) {
   const gross = roundToTwo((qty || 0) * (rate || 0))
   const discPct = normalizeProductDiscountPercent(discountPercent)
-  const amountBeforeGst = roundToTwo(gross * (1 - discPct / 100))
-  const discountAmount = roundToTwo(gross - amountBeforeGst)
+  const amountBeforeGst = gross
   const gst = calculateGST(amountBeforeGst, gstRate || 0, gstType || 'CGST_SGST')
   const totalWithGst = roundToTwo(amountBeforeGst + gst.total)
+  const discountAmount = roundToTwo(totalWithGst * (discPct / 100))
+  const finalAmount = roundToTwo(totalWithGst - discountAmount)
   return {
     taxableGross: gross,
     discountAmount,
     amountBeforeGst,
     gst,
     totalWithGst,
-    finalAmount: totalWithGst,
+    finalAmount,
   }
 }
 

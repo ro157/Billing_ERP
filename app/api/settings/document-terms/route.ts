@@ -13,6 +13,7 @@ const MODULE_COLUMN_MAP: Record<DefaultDocumentTermsModule, string> = {
   'purchase-order': 'purchase_order_terms',
   'purchase-invoice': 'purchase_invoice_terms',
   'delivery-challan': 'delivery_challan_terms',
+  'returnable-challan': 'returnable_challan_terms',
 }
 
 export async function GET(req: NextRequest) {

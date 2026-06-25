@@ -123,7 +123,7 @@ export interface DeliveryChallanPdfData {
   items: QuotationPdfItem[]
 }
 
-type SalesDocumentKind = 'quotation' | 'invoice' | 'delivery-challan'
+type SalesDocumentKind = 'quotation' | 'invoice' | 'delivery-challan' | 'returnable-challan'
 
 type SalesDocumentRenderOptions = {
   copyLabel?: string
@@ -308,22 +308,39 @@ function getDeliveryChallanMetaFields(challan: DeliveryChallanPdfData): LabeledL
   return lines
 }
 
+function getReturnableChallanMetaFields(challan: DeliveryChallanPdfData): LabeledLine[] {
+  const lines: LabeledLine[] = [
+    { label: 'RC No.', value: challan.challan_no, valueBold: true },
+    { label: 'Challan Date', value: formatPdfDate(challan.date), valueBold: true },
+  ]
+  if (challan.completion_date) {
+    lines.push({
+      label: 'Expected Return Date',
+      value: formatPdfDate(challan.completion_date),
+      valueBold: true,
+    })
+  }
+  return lines
+}
+
 function getDocumentMetaFields(
   kind: SalesDocumentKind,
   data: QuotationPdfData | InvoicePdfData | DeliveryChallanPdfData
 ): LabeledLine[] {
   if (kind === 'invoice') return getInvoiceMetaFields(data as InvoicePdfData)
   if (kind === 'delivery-challan') return getDeliveryChallanMetaFields(data as DeliveryChallanPdfData)
+  if (kind === 'returnable-challan') return getReturnableChallanMetaFields(data as DeliveryChallanPdfData)
   return getQuotationMetaFields(data as QuotationPdfData)
 }
 
 function usesInvoiceStyleFooter(kind: SalesDocumentKind): boolean {
-  return kind === 'invoice' || kind === 'delivery-challan'
+  return kind === 'invoice' || kind === 'delivery-challan' || kind === 'returnable-challan'
 }
 
 function getDocumentTitle(kind: SalesDocumentKind): string {
   if (kind === 'invoice') return 'Tax Invoice'
   if (kind === 'delivery-challan') return 'Delivery Challan'
+  if (kind === 'returnable-challan') return 'Returnable Challan'
   return 'Quotation'
 }
 
@@ -383,7 +400,7 @@ function itemsTableBorderAllowance(colCount: number): number {
 }
 
 function getSummaryRowCount(isIgst: boolean): number {
-  return isIgst ? 6 : 7
+  return isIgst ? 7 : 8
 }
 
 function getSummaryTableH(isIgst: boolean): number {
@@ -493,7 +510,8 @@ function drawTaxSummaryTable(
   taxAmt: number,
   roundOff: number,
   totalAmount: number,
-  hideAmounts = false
+  hideAmounts = false,
+  discountAmount = 0
 ): number {
   const blank = ''
   const rows: SummaryTableRow[] = [{ label: 'Taxable Amount', value: hideAmounts ? blank : formatMoney(totalTaxable) }]
@@ -504,6 +522,10 @@ function drawTaxSummaryTable(
     rows.push({ label: 'Add : SGST', value: hideAmounts ? blank : formatMoney(taxAmt / 2) })
   }
   rows.push({ label: 'Total Tax', value: hideAmounts ? blank : formatMoney(taxAmt) })
+  rows.push({
+    label: 'Less : Discount',
+    value: hideAmounts || discountAmount <= 0 ? blank : formatMoney(discountAmount),
+  })
   rows.push({ label: 'Round off Amount', value: hideAmounts ? blank : formatMoney(roundOff) })
   rows.push({
     label: 'Total Amount After Tax',
@@ -549,17 +571,20 @@ function drawTaxSummaryTable(
 }
 
 function getItemsTableColumnStyles(contentW: number, isIgst: boolean): Record<number, object> {
-  const tableW = contentW - itemsTableBorderAllowance(isIgst ? 9 : 10)
+  const colCount = isIgst ? 11 : 12
+  const tableW = contentW - itemsTableBorderAllowance(colCount)
   if (isIgst) {
     const w = {
       0: 7,
-      2: 11,
-      3: 11,
-      4: 13,
-      5: 15,
-      6: 8,
-      7: 14,
-      8: 17,
+      2: 10,
+      3: 10,
+      4: 12,
+      5: 14,
+      6: 7,
+      7: 12,
+      8: 7,
+      9: 11,
+      10: 14,
     }
     const fixed = Object.values(w).reduce((s, n) => s + n, 0)
     return {
@@ -571,20 +596,24 @@ function getItemsTableColumnStyles(contentW: number, isIgst: boolean): Record<nu
       5: { cellWidth: w[5], halign: 'right' },
       6: { cellWidth: w[6], halign: 'center' },
       7: { cellWidth: w[7], halign: 'right' },
-      8: { cellWidth: w[8], halign: 'right', fontStyle: 'bold', overflow: 'linebreak' },
+      8: { cellWidth: w[8], halign: 'center' },
+      9: { cellWidth: w[9], halign: 'right' },
+      10: { cellWidth: w[10], halign: 'right', fontStyle: 'bold', overflow: 'linebreak' },
     }
   }
 
   const w = {
     0: 7,
-    2: 10,
-    3: 10,
-    4: 12,
-    5: 14,
-    6: 7,
-    7: 11,
-    8: 11,
-    9: 15,
+    2: 9,
+    3: 9,
+    4: 11,
+    5: 13,
+    6: 6,
+    7: 10,
+    8: 10,
+    9: 7,
+    10: 11,
+    11: 14,
   }
   const fixed = Object.values(w).reduce((s, n) => s + n, 0)
   return {
@@ -597,14 +626,16 @@ function getItemsTableColumnStyles(contentW: number, isIgst: boolean): Record<nu
     6: { cellWidth: w[6], halign: 'center' },
     7: { cellWidth: w[7], halign: 'right' },
     8: { cellWidth: w[8], halign: 'right' },
-    9: { cellWidth: w[9], halign: 'right', fontStyle: 'bold', overflow: 'linebreak' },
+    9: { cellWidth: w[9], halign: 'center' },
+    10: { cellWidth: w[10], halign: 'right' },
+    11: { cellWidth: w[11], halign: 'right', fontStyle: 'bold', overflow: 'linebreak' },
   }
 }
 
 function getProductColumnWidth(contentW: number, isIgst: boolean): number {
-  const colCount = isIgst ? 9 : 10
+  const colCount = isIgst ? 11 : 12
   const tableW = contentW - itemsTableBorderAllowance(colCount)
-  const fixed = isIgst ? 96 : 97
+  const fixed = isIgst ? 104 : 107
   return tableW - fixed
 }
 
@@ -751,7 +782,8 @@ function drawQuotationFooter(
     taxAmt,
     roundOff,
     Number(document.total_amount),
-    hidePricingTotals
+    hidePricingTotals,
+    Number(document.discount_amount) || 0
   )
   doc.line(splitX, signTop, bodyRight, signTop)
   doc.setFontSize(5.8)
@@ -928,7 +960,7 @@ function renderSalesDocumentPage(
   const gstType = resolveDocumentGstType(settings, document.customer, gstTypeOverride)
   const isIgst = gstType === 'IGST'
   const hideItemPricing =
-    kind === 'delivery-challan' &&
+    (kind === 'delivery-challan' || kind === 'returnable-challan') &&
     !(document as DeliveryChallanPdfData).include_pricing
 
   let totalQty = 0
@@ -936,11 +968,12 @@ function renderSalesDocumentPage(
   let totalIgst = 0
   let totalCgst = 0
   let totalSgst = 0
+  let totalDiscount = 0
   let totalAmount = 0
 
   const tableHead = isIgst
-    ? [['Sr. No.', 'Name of Product / Service', 'HSN / SAC', 'Qty', 'Rate', 'Taxable Value', 'IGST %', 'IGST Amt', 'Total']]
-    : [['Sr. No.', 'Name of Product / Service', 'HSN / SAC', 'Qty', 'Rate', 'Taxable Value', 'CGST %', 'CGST Amt', 'SGST Amt', 'Total']]
+    ? [['Sr. No.', 'Name of Product / Service', 'HSN / SAC', 'Qty', 'Rate', 'Taxable Value', 'IGST %', 'IGST Amt', 'Disc %', 'Disc Amt', 'Total']]
+    : [['Sr. No.', 'Name of Product / Service', 'HSN / SAC', 'Qty', 'Rate', 'Taxable Value', 'CGST %', 'CGST Amt', 'SGST Amt', 'Disc %', 'Disc Amt', 'Total']]
 
   const tableBody = document.items.map((item, idx) => {
     const t = computeQuotationItemTotals(
@@ -950,12 +983,14 @@ function renderSalesDocumentPage(
     const qty = Number(item.quantity)
     const unit = item.unit_short || 'PCS'
     const taxable = t.taxable
+    const discPct = Number(item.discount) || 0
     totalQty += qty
     totalTaxable += taxable
     totalIgst += t.igst
     totalCgst += t.cgst
     totalSgst += t.sgst
-    totalAmount += Number(item.amount)
+    totalDiscount += t.discAmt
+    totalAmount += t.total
 
     const row = [
       String(idx + 1),
@@ -966,31 +1001,36 @@ function renderSalesDocumentPage(
 
     if (hideItemPricing) {
       if (isIgst) {
-        row.push('', '', '', '', '')
+        row.push('', '', '', '', '', '', '')
       } else {
-        row.push('', '', '', '', '', '')
+        row.push('', '', '', '', '', '', '', '')
       }
     } else {
       row.push(formatMoney(item.rate), formatMoney(taxable))
       if (isIgst) {
-        row.push(`${item.gst_rate}%`, formatMoney(t.igst), formatMoney(item.amount))
+        row.push(`${item.gst_rate}%`, formatMoney(t.igst))
       } else {
-        row.push(`${item.gst_rate / 2}%`, formatMoney(t.cgst), formatMoney(t.sgst), formatMoney(item.amount))
+        row.push(`${item.gst_rate / 2}%`, formatMoney(t.cgst), formatMoney(t.sgst))
       }
+      row.push(
+        discPct > 0 ? `${discPct}%` : '',
+        discPct > 0 ? formatMoney(t.discAmt) : '',
+        formatMoney(t.total)
+      )
     }
     return row
   })
 
   const totalRow = hideItemPricing
     ? isIgst
-      ? ['', 'Total', '', String(roundToTwo(totalQty)), '', '', '', '', '']
-      : ['', 'Total', '', String(roundToTwo(totalQty)), '', '', '', '', '', '']
+      ? ['', 'Total', '', String(roundToTwo(totalQty)), '', '', '', '', '', '', '']
+      : ['', 'Total', '', String(roundToTwo(totalQty)), '', '', '', '', '', '', '', '']
     : isIgst
-      ? ['', 'Total', '', String(roundToTwo(totalQty)), '', formatMoney(totalTaxable), '', formatMoney(totalIgst), formatMoney(totalAmount)]
-      : ['', 'Total', '', String(roundToTwo(totalQty)), '', formatMoney(totalTaxable), '', formatMoney(totalCgst), formatMoney(totalSgst), formatMoney(totalAmount)]
+      ? ['', 'Total', '', String(roundToTwo(totalQty)), '', formatMoney(totalTaxable), '', formatMoney(totalIgst), '', formatMoney(totalDiscount), formatMoney(totalAmount)]
+      : ['', 'Total', '', String(roundToTwo(totalQty)), '', formatMoney(totalTaxable), '', formatMoney(totalCgst), formatMoney(totalSgst), '', formatMoney(totalDiscount), formatMoney(totalAmount)]
 
   const itemsTableStartY = y
-  const colCount = isIgst ? 9 : 10
+  const colCount = isIgst ? 11 : 12
   const termsSource = document.terms || settings.termsCondition
   const useCompactLayout = document.items.length <= 2
   const mainFooterH = getFooterMainH(isIgst, kind, doc, termsSource?.trim() || '', contentW * FOOTER_LEFT_RATIO)
@@ -1095,7 +1135,7 @@ function renderSalesDocumentPage(
         doc.setFillColor(245, 248, 252)
         doc.rect(data.cell.x + 0.2, data.cell.y + 0.2, data.cell.width - 0.4, data.cell.height - 0.4, 'F')
 
-        const rightCols = isIgst ? [3, 4, 5, 7, 8] : [3, 4, 5, 7, 8, 9]
+        const rightCols = isIgst ? [3, 4, 5, 7, 9, 10] : [3, 4, 5, 7, 8, 10, 11]
         const align: 'left' | 'center' | 'right' =
           data.column.index === 1 ? 'left' : rightCols.includes(data.column.index) ? 'right' : 'center'
         const pad = 1.5
@@ -1215,6 +1255,27 @@ export function generateDeliveryChallanPdfBuffer(
   pages.forEach((copy, index) => {
     if (index > 0) doc.addPage()
     renderSalesDocumentPage(doc, 'delivery-challan', challan, settings, challan.gst_type, {
+      copyLabel: INVOICE_COPY_LABELS[copy],
+      pageNumber: index + 1,
+      totalPages: pages.length,
+    })
+  })
+
+  return doc.output('arraybuffer')
+}
+
+export function generateReturnableChallanPdfBuffer(
+  challan: DeliveryChallanPdfData,
+  settings: QuotationPdfSettings,
+  copies: InvoiceCopyType[] = ['original']
+): ArrayBuffer {
+  const selected = INVOICE_COPY_TYPES.filter((copy) => copies.includes(copy))
+  const pages = selected.length > 0 ? selected : (['original'] as InvoiceCopyType[])
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' })
+
+  pages.forEach((copy, index) => {
+    if (index > 0) doc.addPage()
+    renderSalesDocumentPage(doc, 'returnable-challan', challan, settings, challan.gst_type, {
       copyLabel: INVOICE_COPY_LABELS[copy],
       pageNumber: index + 1,
       totalPages: pages.length,

@@ -23,6 +23,7 @@ export type DefaultDocumentTermsModule =
   | 'purchase-order'
   | 'purchase-invoice'
   | 'delivery-challan'
+  | 'returnable-challan'
 
 export function resolveSettingsDocumentTerms(
   moduleTerms: string | null | undefined,
