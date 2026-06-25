@@ -117,6 +117,7 @@ export interface DeliveryChallanPdfData {
   gst_type?: string | null
   terms?: string | null
   notes?: string | null
+  include_pricing?: boolean
   customer: QuotationPdfCustomer
   consignee?: QuotationPdfCustomer
   items: QuotationPdfItem[]
@@ -491,20 +492,22 @@ function drawTaxSummaryTable(
   totalTaxable: number,
   taxAmt: number,
   roundOff: number,
-  totalAmount: number
+  totalAmount: number,
+  hideAmounts = false
 ): number {
-  const rows: SummaryTableRow[] = [{ label: 'Taxable Amount', value: formatMoney(totalTaxable) }]
+  const blank = ''
+  const rows: SummaryTableRow[] = [{ label: 'Taxable Amount', value: hideAmounts ? blank : formatMoney(totalTaxable) }]
   if (isIgst) {
-    rows.push({ label: 'Add : IGST', value: formatMoney(taxAmt) })
+    rows.push({ label: 'Add : IGST', value: hideAmounts ? blank : formatMoney(taxAmt) })
   } else {
-    rows.push({ label: 'Add : CGST', value: formatMoney(taxAmt / 2) })
-    rows.push({ label: 'Add : SGST', value: formatMoney(taxAmt / 2) })
+    rows.push({ label: 'Add : CGST', value: hideAmounts ? blank : formatMoney(taxAmt / 2) })
+    rows.push({ label: 'Add : SGST', value: hideAmounts ? blank : formatMoney(taxAmt / 2) })
   }
-  rows.push({ label: 'Total Tax', value: formatMoney(taxAmt) })
-  rows.push({ label: 'Round off Amount', value: formatMoney(roundOff) })
+  rows.push({ label: 'Total Tax', value: hideAmounts ? blank : formatMoney(taxAmt) })
+  rows.push({ label: 'Round off Amount', value: hideAmounts ? blank : formatMoney(roundOff) })
   rows.push({
     label: 'Total Amount After Tax',
-    value: `${PDF_RUPEE} ${formatMoney(totalAmount)}`,
+    value: hideAmounts ? blank : `${PDF_RUPEE} ${formatMoney(totalAmount)}`,
     valueFontSize: 6.2,
   })
   rows.push({ label: '', value: '(E & O.E.)', valueOnly: true, whiteBg: true })
@@ -659,9 +662,10 @@ function drawQuotationFooter(
   totalTaxable: number,
   taxAmt: number,
   layout: FooterLayout,
-  kind: SalesDocumentKind
+  kind: SalesDocumentKind,
+  hidePricingTotals = false
 ): void {
-  const words = amountInWords(Number(document.total_amount)).toUpperCase()
+  const words = hidePricingTotals ? '' : amountInWords(Number(document.total_amount)).toUpperCase()
   const roundOff = Number(document.round_off) || 0
   const pad = 2
   const top = layout.mainFooterTop
@@ -692,8 +696,10 @@ function drawQuotationFooter(
   doc.text('Total in words', bodyLeft + leftW / 2, top + 4.2, { align: 'center' })
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(6)
-  const wordLines = doc.splitTextToSize(words, leftW - pad * 2)
-  doc.text(wordLines.slice(0, 2), bodyLeft + leftW / 2, top + 7.5, { align: 'center' })
+  if (words) {
+    const wordLines = doc.splitTextToSize(words, leftW - pad * 2)
+    doc.text(wordLines.slice(0, 2), bodyLeft + leftW / 2, top + 7.5, { align: 'center' })
+  }
 
   if (usesInvoiceStyleFooter(kind)) {
     drawInvoiceTermsBlock(doc, bodyLeft, splitX, leftW, bankTop, bankH, layout.termLines, pad)
@@ -744,7 +750,8 @@ function drawQuotationFooter(
     totalTaxable,
     taxAmt,
     roundOff,
-    Number(document.total_amount)
+    Number(document.total_amount),
+    hidePricingTotals
   )
   doc.line(splitX, signTop, bodyRight, signTop)
   doc.setFontSize(5.8)
@@ -920,6 +927,9 @@ function renderSalesDocumentPage(
   // ── Items table ──
   const gstType = resolveDocumentGstType(settings, document.customer, gstTypeOverride)
   const isIgst = gstType === 'IGST'
+  const hideItemPricing =
+    kind === 'delivery-challan' &&
+    !(document as DeliveryChallanPdfData).include_pricing
 
   let totalQty = 0
   let totalTaxable = 0
@@ -952,21 +962,32 @@ function renderSalesDocumentPage(
       getProductCellParts(item).productName,
       formatHsnSac(item.hsn_code, item.sac_code),
       `${qty} ${unit}`,
-      formatMoney(item.rate),
-      formatMoney(taxable),
     ] as string[]
 
-    if (isIgst) {
-      row.push(`${item.gst_rate}%`, formatMoney(t.igst), formatMoney(item.amount))
+    if (hideItemPricing) {
+      if (isIgst) {
+        row.push('', '', '', '', '')
+      } else {
+        row.push('', '', '', '', '', '')
+      }
     } else {
-      row.push(`${item.gst_rate / 2}%`, formatMoney(t.cgst), formatMoney(t.sgst), formatMoney(item.amount))
+      row.push(formatMoney(item.rate), formatMoney(taxable))
+      if (isIgst) {
+        row.push(`${item.gst_rate}%`, formatMoney(t.igst), formatMoney(item.amount))
+      } else {
+        row.push(`${item.gst_rate / 2}%`, formatMoney(t.cgst), formatMoney(t.sgst), formatMoney(item.amount))
+      }
     }
     return row
   })
 
-  const totalRow = isIgst
-    ? ['', 'Total', '', String(roundToTwo(totalQty)), '', formatMoney(totalTaxable), '', formatMoney(totalIgst), formatMoney(totalAmount)]
-    : ['', 'Total', '', String(roundToTwo(totalQty)), '', formatMoney(totalTaxable), '', formatMoney(totalCgst), formatMoney(totalSgst), formatMoney(totalAmount)]
+  const totalRow = hideItemPricing
+    ? isIgst
+      ? ['', 'Total', '', String(roundToTwo(totalQty)), '', '', '', '', '']
+      : ['', 'Total', '', String(roundToTwo(totalQty)), '', '', '', '', '', '']
+    : isIgst
+      ? ['', 'Total', '', String(roundToTwo(totalQty)), '', formatMoney(totalTaxable), '', formatMoney(totalIgst), formatMoney(totalAmount)]
+      : ['', 'Total', '', String(roundToTwo(totalQty)), '', formatMoney(totalTaxable), '', formatMoney(totalCgst), formatMoney(totalSgst), formatMoney(totalAmount)]
 
   const itemsTableStartY = y
   const colCount = isIgst ? 9 : 10
@@ -1132,7 +1153,8 @@ function renderSalesDocumentPage(
     totalTaxable,
     taxAmt,
     layout,
-    kind
+    kind,
+    hideItemPricing
   )
 
   doc.setDrawColor(...BORDER)

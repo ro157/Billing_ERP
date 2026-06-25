@@ -67,6 +67,11 @@ export async function ensureDeliveryChallanSchema(): Promise<void> {
       'ALTER TABLE challan_items ADD COLUMN discount DECIMAL(5,2) NOT NULL DEFAULT 0 AFTER rate'
     )
   }
+  if (!(await hasColumn('delivery_challans', 'include_pricing'))) {
+    await addColumn(
+      'ALTER TABLE delivery_challans ADD COLUMN include_pricing TINYINT(1) NOT NULL DEFAULT 0 AFTER terms'
+    )
+  }
 
   schemaReady = true
 }

@@ -65,8 +65,8 @@ export async function POST(req: NextRequest) {
     const id = randomUUID()
     await conn.execute(
       `INSERT INTO delivery_challans (
-        id, organization_id, challan_no, customer_id, date, completion_date, party_details, terms, status
-      ) VALUES (?,?,?,?,?,?,?,?,?)`,
+        id, organization_id, challan_no, customer_id, date, completion_date, party_details, terms, include_pricing, status
+      ) VALUES (?,?,?,?,?,?,?,?,?,?)`,
       [
         id,
         organizationId,
@@ -76,6 +76,7 @@ export async function POST(req: NextRequest) {
         data.completionDate || null,
         partyDetailsJson,
         data.terms || null,
+        data.includePricing ? 1 : 0,
         'PENDING',
       ]
     )
@@ -89,12 +90,15 @@ export async function POST(req: NextRequest) {
         ) as any[]
         if (prod[0]) productName = prod[0].name
       }
+      const rate = data.includePricing ? item.rate || 0 : 0
+      const discount = data.includePricing ? item.discount || 0 : 0
+      const gstRate = data.includePricing ? item.gstRate || 0 : 0
       const totals = computeSalesDocumentItemTotals(
         {
           quantity: item.quantity,
-          rate: item.rate || 0,
-          discount: item.discount || 0,
-          gstRate: item.gstRate || 0,
+          rate,
+          discount,
+          gstRate,
         },
         'CGST_SGST'
       )
@@ -106,9 +110,9 @@ export async function POST(req: NextRequest) {
           item.productId || null,
           item.description || productName,
           item.quantity,
-          item.rate || 0,
-          item.discount || 0,
-          item.gstRate || 0,
+          rate,
+          discount,
+          gstRate,
           totals.cgst + totals.sgst + totals.igst,
           totals.total,
         ]

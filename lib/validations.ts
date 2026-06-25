@@ -347,6 +347,7 @@ export const challanSchema = z.object({
   eWayBillNo: z.string().optional(),
   notes: z.string().optional(),
   terms: z.string().optional(),
+  includePricing: z.boolean().default(false),
   partyDetails: z.object({
     buyer: partySnapshotSchema.optional(),
     consignee: partySnapshotSchema.optional(),

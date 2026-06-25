@@ -104,6 +104,7 @@ export function DeliveryChallanForm({ mode, challanId }: DeliveryChallanFormProp
       customerId: '',
       date: today,
       terms: '',
+      includePricing: false,
       items: [defaultItem],
     },
   })
@@ -111,6 +112,7 @@ export function DeliveryChallanForm({ mode, challanId }: DeliveryChallanFormProp
   const { register, control, handleSubmit, setValue, watch, reset, formState: { errors } } = form
   const { fields, append, remove } = useFieldArray({ control, name: 'items' })
   const items = watch('items')
+  const includePricing = watch('includePricing')
 
   const party = useDocumentPartyFields(customers)
   const { loadParties } = party
@@ -196,6 +198,7 @@ export function DeliveryChallanForm({ mode, challanId }: DeliveryChallanFormProp
         loadParties(buyer, consignee)
 
         const rawItems = Array.isArray(data.items) ? data.items : []
+        const savedIncludePricing = Boolean(data.include_pricing)
         const formItems = rawItems.map((item: {
           product_id: string
           description?: string | null
@@ -207,9 +210,9 @@ export function DeliveryChallanForm({ mode, challanId }: DeliveryChallanFormProp
           productId: item.product_id || '',
           description: item.description || '',
           quantity: Number(item.quantity) || 1,
-          rate: Number(item.rate) || 0,
-          discount: Number(item.discount) || 0,
-          gstRate: Number(item.gst_rate) || 0,
+          rate: savedIncludePricing ? Number(item.rate) || 0 : 0,
+          discount: savedIncludePricing ? Number(item.discount) || 0 : 0,
+          gstRate: savedIncludePricing ? Number(item.gst_rate) || 0 : 0,
           unit: 'Nos',
         }))
 
@@ -226,6 +229,7 @@ export function DeliveryChallanForm({ mode, challanId }: DeliveryChallanFormProp
           date: toDateInput(data.date) || today,
           completionDate: data.completion_date ? toDateInput(data.completion_date) : undefined,
           terms: data.terms || '',
+          includePricing: savedIncludePricing,
           items: formItems.length > 0 ? formItems : [defaultItem],
         })
         setPendingItemMeta(metaRows.length > 0 ? metaRows : null)
@@ -308,7 +312,7 @@ export function DeliveryChallanForm({ mode, challanId }: DeliveryChallanFormProp
     }))
   }
 
-  const applyProduct = (fieldId: string, index: number, productId: string) => {
+  const applyProduct = (fieldId: string, index: number, productId: string, withPricing = includePricing) => {
     const p = products.find((x) => x.id === productId)
     if (!p) return
     const used = getUsedProductIds(index)
@@ -318,10 +322,16 @@ export function DeliveryChallanForm({ mode, challanId }: DeliveryChallanFormProp
     }
     setValue(`items.${index}.productId`, productId, { shouldValidate: true })
     setValue(`items.${index}.description`, p.description || p.name)
-    setValue(`items.${index}.rate`, Number(p.selling_price) || 0)
-    setValue(`items.${index}.gstRate`, Number(p.gst_rate) || 0)
-    setValue(`items.${index}.discount`, normalizeProductDiscountPercent(p.discount))
     setValue(`items.${index}.unit`, p.unit_short_name || 'Nos')
+    if (withPricing) {
+      setValue(`items.${index}.rate`, Number(p.selling_price) || 0)
+      setValue(`items.${index}.gstRate`, Number(p.gst_rate) || 0)
+      setValue(`items.${index}.discount`, normalizeProductDiscountPercent(p.discount))
+    } else {
+      setValue(`items.${index}.rate`, 0)
+      setValue(`items.${index}.gstRate`, 0)
+      setValue(`items.${index}.discount`, 0)
+    }
     setItemMeta((prev) => ({
       ...prev,
       [fieldId]: {
@@ -330,6 +340,20 @@ export function DeliveryChallanForm({ mode, challanId }: DeliveryChallanFormProp
         listOpen: false,
       },
     }))
+  }
+
+  const handleIncludePricingChange = (checked: boolean) => {
+    setValue('includePricing', checked, { shouldDirty: true })
+    fields.forEach((field, index) => {
+      const productId = items?.[index]?.productId
+      if (checked && productId) {
+        applyProduct(field.id, index, productId, true)
+      } else if (!checked) {
+        setValue(`items.${index}.rate`, 0)
+        setValue(`items.${index}.gstRate`, 0)
+        setValue(`items.${index}.discount`, 0)
+      }
+    })
   }
 
   const handleProductNameChange = (fieldId: string, index: number, value: string) => {
@@ -473,11 +497,22 @@ export function DeliveryChallanForm({ mode, challanId }: DeliveryChallanFormProp
 
         <Card className="shadow-sm border-muted-foreground/20 overflow-hidden">
           <CardHeader className="py-3 px-4 bg-muted/30 border-b flex flex-row items-center justify-between gap-2">
-            <CardTitle className="text-base font-semibold flex items-center gap-2">
-              <Package className="h-4 w-4 text-muted-foreground" />
-              Items
-            </CardTitle>
-            <span className="text-xs text-muted-foreground">{fields.length} product(s)</span>
+            <div className="flex flex-wrap items-center gap-3 min-w-0">
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <Package className="h-4 w-4 text-muted-foreground" />
+                Items
+              </CardTitle>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={Boolean(includePricing)}
+                  onChange={(e) => handleIncludePricingChange(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 accent-blue-600"
+                />
+                <span className="text-muted-foreground text-xs sm:text-sm">Include pricing details</span>
+              </label>
+            </div>
+            <span className="text-xs text-muted-foreground shrink-0">{fields.length} product(s)</span>
           </CardHeader>
           <CardContent className="p-0">
             {fields.map((field, i) => {
@@ -596,12 +631,13 @@ export function DeliveryChallanForm({ mode, challanId }: DeliveryChallanFormProp
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-xs">Rate *</Label>
+                        <Label className="text-xs">Rate{includePricing ? ' *' : ''}</Label>
                         <Input
                           type="number"
                           min="0"
                           step="0.01"
                           className="h-9 no-spinner"
+                          disabled={!includePricing}
                           {...register(`items.${i}.rate`, { valueAsNumber: true })}
                         />
                       </div>
@@ -610,7 +646,7 @@ export function DeliveryChallanForm({ mode, challanId }: DeliveryChallanFormProp
                         <Input
                           readOnly
                           tabIndex={-1}
-                          value={formatCurrency(line.taxableGross)}
+                          value={includePricing ? formatCurrency(line.taxableGross) : ''}
                           className={readOnlyInputClass}
                         />
                       </div>
@@ -619,6 +655,7 @@ export function DeliveryChallanForm({ mode, challanId }: DeliveryChallanFormProp
                         <Select
                           value={String(item?.gstRate ?? 0)}
                           onValueChange={(v) => setValue(`items.${i}.gstRate`, parseFloat(v))}
+                          disabled={!includePricing}
                         >
                           <SelectTrigger className="h-9">
                             <SelectValue />
@@ -640,7 +677,8 @@ export function DeliveryChallanForm({ mode, challanId }: DeliveryChallanFormProp
                           max="100"
                           step="0.01"
                           className="h-9 no-spinner"
-                          value={Number.isFinite(item?.discount) ? item.discount : ''}
+                          disabled={!includePricing}
+                          value={includePricing && Number.isFinite(item?.discount) ? item.discount : ''}
                           onChange={(e) => {
                             const raw = e.target.value
                             const num = raw === '' ? 0 : Math.min(100, Math.max(0, roundToTwo(parseFloat(raw) || 0)))
@@ -653,7 +691,7 @@ export function DeliveryChallanForm({ mode, challanId }: DeliveryChallanFormProp
                         <Input
                           readOnly
                           tabIndex={-1}
-                          value={formatCurrency(line.finalAmount)}
+                          value={includePricing ? formatCurrency(line.finalAmount) : ''}
                           className={cn(readOnlyInputClass, 'font-semibold')}
                         />
                       </div>

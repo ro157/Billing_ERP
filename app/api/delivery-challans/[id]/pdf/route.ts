@@ -17,7 +17,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     await Promise.all([ensureBusinessSettingsBankingColumns(), ensureDeliveryChallanSchema()])
 
     const [challanRows] = await db.execute(
-      `SELECT dc.id, dc.challan_no, dc.customer_id, dc.date, dc.completion_date, dc.terms, dc.party_details
+      `SELECT dc.id, dc.challan_no, dc.customer_id, dc.date, dc.completion_date, dc.terms, dc.party_details, dc.include_pricing
        FROM delivery_challans dc
        WHERE dc.id = ? AND dc.organization_id = ?`,
       [params.id, organizationId]
@@ -67,18 +67,23 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         ? 'IGST'
         : 'CGST_SGST'
 
+    const includePricing = Boolean(challan.include_pricing)
+
     let subtotal = 0
     let totalDiscount = 0
     let totalTax = 0
     let grandTotal = 0
 
     const pdfItems = itemRows.map((item: any) => {
+      const rate = includePricing ? Number(item.rate) || 0 : 0
+      const discount = includePricing ? Number(item.discount) || 0 : 0
+      const gstRate = includePricing ? Number(item.gst_rate) || 0 : 0
       const totals = computeSalesDocumentItemTotals(
         {
           quantity: Number(item.quantity) || 0,
-          rate: Number(item.rate) || 0,
-          discount: Number(item.discount) || 0,
-          gstRate: Number(item.gst_rate) || 0,
+          rate,
+          discount,
+          gstRate,
         },
         gstType
       )
@@ -94,15 +99,15 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         sac_code: item.sac_code,
         unit_short: item.unit_short,
         quantity: Number(item.quantity) || 0,
-        rate: Number(item.rate) || 0,
-        discount: Number(item.discount) || 0,
-        gst_rate: Number(item.gst_rate) || 0,
-        amount: Number(item.amount) || totals.total,
+        rate,
+        discount,
+        gst_rate: gstRate,
+        amount: includePricing ? Number(item.amount) || totals.total : 0,
       }
     })
 
-    const roundedGrandTotal = roundToNearestRupee(roundToTwo(grandTotal))
-    const roundOff = roundToTwo(roundedGrandTotal - roundToTwo(grandTotal))
+    const roundedGrandTotal = includePricing ? roundToNearestRupee(roundToTwo(grandTotal)) : 0
+    const roundOff = includePricing ? roundToTwo(roundedGrandTotal - roundToTwo(grandTotal)) : 0
 
     const copies = parseInvoiceCopiesParam(req.nextUrl.searchParams.get('copies'))
 
@@ -111,13 +116,14 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         challan_no: challan.challan_no,
         date: challan.date,
         completion_date: challan.completion_date,
-        subtotal: roundToTwo(subtotal),
-        discount_amount: roundToTwo(totalDiscount),
-        tax_amount: roundToTwo(totalTax),
+        subtotal: includePricing ? roundToTwo(subtotal) : 0,
+        discount_amount: includePricing ? roundToTwo(totalDiscount) : 0,
+        tax_amount: includePricing ? roundToTwo(totalTax) : 0,
         round_off: roundOff,
         total_amount: roundedGrandTotal,
         gst_type: gstType,
         terms: challan.terms,
+        include_pricing: includePricing,
         customer: parties.buyer,
         consignee: parties.consignee,
         items: pdfItems,

@@ -41,7 +41,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     const partyDetailsJson = data.partyDetails ? JSON.stringify(data.partyDetails) : null
 
     await conn.execute(
-      `UPDATE delivery_challans SET customer_id=?, date=?, completion_date=?, party_details=?, terms=?
+      `UPDATE delivery_challans SET customer_id=?, date=?, completion_date=?, party_details=?, terms=?, include_pricing=?
        WHERE id=? AND organization_id = ?`,
       [
         data.customerId,
@@ -49,6 +49,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
         data.completionDate || null,
         partyDetailsJson,
         data.terms || null,
+        data.includePricing ? 1 : 0,
         params.id,
         organizationId,
       ]
@@ -65,12 +66,15 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
         ) as any[]
         if (prod[0]) productName = prod[0].name
       }
+      const rate = data.includePricing ? item.rate || 0 : 0
+      const discount = data.includePricing ? item.discount || 0 : 0
+      const gstRate = data.includePricing ? item.gstRate || 0 : 0
       const totals = computeSalesDocumentItemTotals(
         {
           quantity: item.quantity,
-          rate: item.rate || 0,
-          discount: item.discount || 0,
-          gstRate: item.gstRate || 0,
+          rate,
+          discount,
+          gstRate,
         },
         'CGST_SGST'
       )
@@ -82,9 +86,9 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
           item.productId || null,
           item.description || productName,
           item.quantity,
-          item.rate || 0,
-          item.discount || 0,
-          item.gstRate || 0,
+          rate,
+          discount,
+          gstRate,
           totals.cgst + totals.sgst + totals.igst,
           totals.total,
         ]
