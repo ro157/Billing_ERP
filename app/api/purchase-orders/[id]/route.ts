@@ -3,6 +3,7 @@ import db from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { purchaseOrderSchema } from '@/lib/validations'
 import { ensureDocumentTermsColumns } from '@/lib/ensure-purchase-schema'
+import { normalizePurchaseDocumentItem } from '@/lib/purchase-include-pricing'
 import { randomUUID } from 'crypto'
 
 function computeItemTotals(item: { quantity: number; rate: number; discount?: number; gstRate: number }, gstType = 'CGST_SGST') {
@@ -75,6 +76,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 
     const data = purchaseOrderSchema.parse(body)
     const gstType = data.gstType || 'CGST_SGST'
+    const includePricing = data.includePricing
 
     const [existingRows] = await conn.execute(
       'SELECT * FROM purchase_orders WHERE id = ? AND organization_id = ?',
@@ -91,19 +93,20 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     let totalIgst = 0
     let grandTotal = 0
     const itemsWithTotals = data.items.map((item) => {
-      const t = computeItemTotals(item, gstType)
-      subtotal += item.quantity * item.rate
+      const normalized = normalizePurchaseDocumentItem(item, includePricing)
+      const t = computeItemTotals(normalized, gstType)
+      subtotal += normalized.quantity * normalized.rate
       totalDiscount += t.discAmt
       totalCgst += t.cgst
       totalSgst += t.sgst
       totalIgst += t.igst
       grandTotal += t.total
-      return { ...item, ...t }
+      return { ...normalized, ...t }
     })
 
     await conn.execute(
       `UPDATE purchase_orders SET vendor_id=?, date=?, expected_date=?, subtotal=?,
-        discount_amount=?, tax_amount=?, total_amount=?, notes=?, terms=? WHERE id=? AND organization_id = ?`,
+        discount_amount=?, tax_amount=?, total_amount=?, notes=?, terms=?, include_pricing=? WHERE id=? AND organization_id = ?`,
       [
         data.vendorId,
         data.date,
@@ -114,6 +117,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
         grandTotal,
         data.notes || null,
         data.terms || null,
+        includePricing ? 1 : 0,
         params.id,
         organizationId,
       ]

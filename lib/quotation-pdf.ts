@@ -2,7 +2,9 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { amountInWords } from '@/lib/amount-in-words'
 import { drawDocumentHeader } from '@/lib/document-header-pdf'
+import { computePurchaseItemTotals, computePurchaseOrderItemTotals } from '@/lib/purchase-totals'
 import { computeQuotationItemTotals } from '@/lib/quotation-totals'
+import type { GstType } from '@/lib/purchase-totals'
 import { INDIAN_STATES, roundToTwo } from '@/lib/utils'
 import {
   INVOICE_COPY_LABELS,
@@ -123,7 +125,50 @@ export interface DeliveryChallanPdfData {
   items: QuotationPdfItem[]
 }
 
-type SalesDocumentKind = 'quotation' | 'invoice' | 'delivery-challan' | 'returnable-challan'
+export interface PurchasePdfData {
+  purchase_no: string
+  date: string
+  due_date?: string | null
+  bill_no?: string | null
+  bill_date?: string | null
+  subtotal: number
+  discount_amount: number
+  tax_amount: number
+  round_off?: number
+  total_amount: number
+  paid_amount?: number
+  balance_amount?: number
+  gst_type?: string | null
+  terms?: string | null
+  notes?: string | null
+  vendor: QuotationPdfCustomer
+  items: QuotationPdfItem[]
+}
+
+export interface PurchaseOrderPdfData {
+  po_no: string
+  date: string
+  expected_date?: string | null
+  subtotal: number
+  discount_amount: number
+  tax_amount: number
+  round_off?: number
+  total_amount: number
+  gst_type?: string | null
+  terms?: string | null
+  notes?: string | null
+  include_pricing?: boolean
+  vendor: QuotationPdfCustomer
+  items: QuotationPdfItem[]
+}
+
+type SalesDocumentKind =
+  | 'quotation'
+  | 'invoice'
+  | 'delivery-challan'
+  | 'returnable-challan'
+  | 'purchase'
+  | 'purchase-order'
 
 type SalesDocumentRenderOptions = {
   copyLabel?: string
@@ -140,6 +185,7 @@ type SalesDocumentPdfData = {
   total_amount: number
   terms?: string | null
   notes?: string | null
+  include_pricing?: boolean
   customer: QuotationPdfCustomer
   consignee?: QuotationPdfCustomer
   items: QuotationPdfItem[]
@@ -157,6 +203,23 @@ function formatPdfDate(date: string | Date | null | undefined): string {
 
 function formatMoney(n: number): string {
   return Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function formatRoundOffForPdf(n: number): string {
+  const rounded = roundToTwo(Number(n) || 0)
+  if (rounded === 0) return '+ 0.00'
+  if (rounded > 0) return `+ ${formatMoney(rounded)}`
+  return formatMoney(rounded)
+}
+
+function formatPdfRateNumber(rate: number): string {
+  const n = Number(rate) || 0
+  if (Number.isInteger(n)) return String(n)
+  return n.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')
+}
+
+function itemsTableBodyTextY(cellY: number, cellHeight: number): number {
+  return cellY + Math.min(ITEM_TABLE_CELL_PADDING + 2.2, cellHeight - 2.2)
 }
 
 function formatHsnSac(hsn?: string | null, sac?: string | null): string {
@@ -323,24 +386,151 @@ function getReturnableChallanMetaFields(challan: DeliveryChallanPdfData): Labele
   return lines
 }
 
+function getPurchaseMetaFields(purchase: PurchasePdfData): LabeledLine[] {
+  const lines: LabeledLine[] = [
+    { label: 'Purchase No.', value: purchase.purchase_no, valueBold: true },
+    { label: 'Purchase Date', value: formatPdfDate(purchase.date), valueBold: true },
+  ]
+  if (purchase.due_date) {
+    lines.push({ label: 'Due Date', value: formatPdfDate(purchase.due_date), valueBold: true })
+  }
+  if (purchase.bill_no) {
+    lines.push({ label: 'Vendor Bill No.', value: purchase.bill_no, valueBold: true })
+  }
+  if (purchase.bill_date) {
+    lines.push({ label: 'Vendor Bill Date', value: formatPdfDate(purchase.bill_date), valueBold: true })
+  }
+  if (purchase.paid_amount != null && purchase.paid_amount > 0) {
+    lines.push({ label: 'Paid Amount', value: `${PDF_RUPEE} ${formatMoney(purchase.paid_amount)}`, valueBold: true })
+  }
+  if (purchase.balance_amount != null && purchase.balance_amount > 0) {
+    lines.push({ label: 'Balance Due', value: `${PDF_RUPEE} ${formatMoney(purchase.balance_amount)}`, valueBold: true })
+  }
+  return lines
+}
+
+function getPurchaseOrderMetaFields(po: PurchaseOrderPdfData): LabeledLine[] {
+  const lines: LabeledLine[] = [
+    { label: 'PO No.', value: po.po_no, valueBold: true },
+    { label: 'PO Date', value: formatPdfDate(po.date), valueBold: true },
+  ]
+  if (po.expected_date) {
+    lines.push({
+      label: 'Expected Delivery',
+      value: formatPdfDate(po.expected_date),
+      valueBold: true,
+    })
+  }
+  return lines
+}
+
+function getPartyColumnHeaders(kind: SalesDocumentKind): [string, string] {
+  if (kind === 'purchase' || kind === 'purchase-order') {
+    return ['Details of Supplier | Vendor :', 'Supplier Address | Ship From :']
+  }
+  return ['Details of Buyer | Billed to :', 'Details of Consignee | Shipped to :']
+}
+
+type PdfLineTotals = {
+  taxable: number
+  cgst: number
+  sgst: number
+  igst: number
+  total: number
+  discAmt: number
+}
+
+function computePdfItemLineTotals(
+  kind: SalesDocumentKind,
+  item: QuotationPdfItem,
+  gstType: GstType
+): PdfLineTotals {
+  if (kind === 'purchase') {
+    const t = computePurchaseItemTotals(
+      {
+        quantity: Number(item.quantity),
+        rate: Number(item.rate),
+        discount: Number(item.discount) || 0,
+        gstRate: Number(item.gst_rate),
+        amount: item.amount,
+      },
+      gstType
+    )
+    return {
+      taxable: t.taxable,
+      cgst: t.cgst,
+      sgst: t.sgst,
+      igst: t.igst,
+      total: t.total,
+      discAmt: t.discAmt,
+    }
+  }
+  if (kind === 'purchase-order') {
+    const t = computePurchaseOrderItemTotals(
+      {
+        quantity: Number(item.quantity),
+        rate: Number(item.rate),
+        discount: Number(item.discount) || 0,
+        gstRate: Number(item.gst_rate),
+      },
+      gstType
+    )
+    return {
+      taxable: t.taxable,
+      cgst: t.cgst,
+      sgst: t.sgst,
+      igst: t.igst,
+      total: t.total,
+      discAmt: t.discAmt,
+    }
+  }
+  const t = computeQuotationItemTotals(
+    {
+      quantity: Number(item.quantity),
+      rate: Number(item.rate),
+      discount: Number(item.discount) || 0,
+      gstRate: Number(item.gst_rate),
+    },
+    gstType
+  )
+  return {
+    taxable: t.taxable,
+    cgst: t.cgst,
+    sgst: t.sgst,
+    igst: t.igst,
+    total: t.total,
+    discAmt: t.discAmt,
+  }
+}
+
 function getDocumentMetaFields(
   kind: SalesDocumentKind,
-  data: QuotationPdfData | InvoicePdfData | DeliveryChallanPdfData
+  data: QuotationPdfData | InvoicePdfData | DeliveryChallanPdfData | PurchasePdfData | PurchaseOrderPdfData
 ): LabeledLine[] {
   if (kind === 'invoice') return getInvoiceMetaFields(data as InvoicePdfData)
   if (kind === 'delivery-challan') return getDeliveryChallanMetaFields(data as DeliveryChallanPdfData)
   if (kind === 'returnable-challan') return getReturnableChallanMetaFields(data as DeliveryChallanPdfData)
+  if (kind === 'purchase') return getPurchaseMetaFields(data as PurchasePdfData)
+  if (kind === 'purchase-order') return getPurchaseOrderMetaFields(data as PurchaseOrderPdfData)
   return getQuotationMetaFields(data as QuotationPdfData)
 }
 
 function usesInvoiceStyleFooter(kind: SalesDocumentKind): boolean {
-  return kind === 'invoice' || kind === 'delivery-challan' || kind === 'returnable-challan'
+  return (
+    kind === 'invoice' ||
+    kind === 'delivery-challan' ||
+    kind === 'returnable-challan' ||
+    kind === 'purchase' ||
+    kind === 'purchase-order'
+  )
 }
 
 function getDocumentTitle(kind: SalesDocumentKind): string {
   if (kind === 'invoice') return 'Tax Invoice'
   if (kind === 'delivery-challan') return 'Delivery Challan'
   if (kind === 'returnable-challan') return 'Returnable Challan'
+  if (kind === 'purchase') return 'Purchase Invoice'
+  if (kind === 'purchase-order') return 'Purchase Order'
   return 'Quotation'
 }
 
@@ -391,7 +581,7 @@ const FOOTER_TOTAL_ROW_H = 7
 const FOOTER_LEFT_RATIO = 0.58
 const FOOTER_WORDS_H = 11
 const FOOTER_BANK_BODY_H = 36
-const FOOTER_SIGN_IN_RIGHT_H = 17
+const FOOTER_SIGN_IN_RIGHT_H = 28
 const FOOTER_LIGHT_BLUE: [number, number, number] = [232, 240, 250]
 const FOOTER_SUMMARY_ROW_H = 5.5
 
@@ -400,7 +590,7 @@ function itemsTableBorderAllowance(colCount: number): number {
 }
 
 function getSummaryRowCount(isIgst: boolean): number {
-  return isIgst ? 7 : 8
+  return isIgst ? 6 : 7
 }
 
 function getSummaryTableH(isIgst: boolean): number {
@@ -526,13 +716,12 @@ function drawTaxSummaryTable(
     label: 'Less : Discount',
     value: hideAmounts || discountAmount <= 0 ? blank : formatMoney(discountAmount),
   })
-  rows.push({ label: 'Round off Amount', value: hideAmounts ? blank : formatMoney(roundOff) })
+  rows.push({ label: 'Round off Amount', value: hideAmounts ? blank : formatRoundOffForPdf(roundOff) })
   rows.push({
     label: 'Total Amount After Tax',
     value: hideAmounts ? blank : `${PDF_RUPEE} ${formatMoney(totalAmount)}`,
     valueFontSize: 6.2,
   })
-  rows.push({ label: '', value: '(E & O.E.)', valueOnly: true, whiteBg: true })
 
   const rowH = maxHeight / rows.length
   const labelColW = width * 0.56
@@ -570,87 +759,80 @@ function drawTaxSummaryTable(
   return cy
 }
 
-function getItemsTableColumnStyles(contentW: number, isIgst: boolean): Record<number, object> {
-  const colCount = isIgst ? 11 : 12
-  const tableW = contentW - itemsTableBorderAllowance(colCount)
-  if (isIgst) {
-    const w = {
-      0: 7,
-      2: 10,
-      3: 10,
-      4: 12,
-      5: 14,
-      6: 7,
-      7: 12,
-      8: 7,
-      9: 11,
-      10: 14,
-    }
-    const fixed = Object.values(w).reduce((s, n) => s + n, 0)
-    return {
-      0: { cellWidth: w[0], halign: 'center', valign: 'top' },
-      1: { cellWidth: tableW - fixed, valign: 'top' },
-      2: { cellWidth: w[2], halign: 'center' },
-      3: { cellWidth: w[3], halign: 'right' },
-      4: { cellWidth: w[4], halign: 'right' },
-      5: { cellWidth: w[5], halign: 'right' },
-      6: { cellWidth: w[6], halign: 'center' },
-      7: { cellWidth: w[7], halign: 'right' },
-      8: { cellWidth: w[8], halign: 'center' },
-      9: { cellWidth: w[9], halign: 'right' },
-      10: { cellWidth: w[10], halign: 'right', fontStyle: 'bold', overflow: 'linebreak' },
-    }
-  }
+const ITEMS_TABLE_COL_COUNT = 11
 
-  const w = {
-    0: 7,
-    2: 9,
-    3: 9,
-    4: 11,
-    5: 13,
-    6: 6,
-    7: 10,
-    8: 10,
-    9: 7,
-    10: 11,
-    11: 14,
-  }
-  const fixed = Object.values(w).reduce((s, n) => s + n, 0)
+function getItemsTableColumnWidths(contentW: number): number[] {
+  const widths = [8, 42, 13, 11, 14, 16, 10, 15, 9, 13, 16]
+  const sum = widths.reduce((s, n) => s + n, 0)
+  const extra = Math.max(0, contentW - sum)
+  widths[1] += extra * 0.55
+  widths[10] += extra * 0.45
+  const drift = contentW - widths.reduce((s, n) => s + n, 0)
+  widths[10] += drift
+  return widths
+}
+
+function buildItemsTableHead(): Record<string, unknown>[][] {
+  return [
+    [
+      { content: 'Sr.\nNo.', rowSpan: 2, styles: { halign: 'center', valign: 'middle', fontSize: 5.5 } },
+      { content: 'Product / Service', rowSpan: 2, styles: { halign: 'left', valign: 'middle', fontSize: 5.5 } },
+      { content: 'HSN /\nSAC', rowSpan: 2, styles: { halign: 'center', valign: 'middle', fontSize: 5.5 } },
+      { content: 'Qty', rowSpan: 2, styles: { halign: 'center', valign: 'middle', fontSize: 5.5 } },
+      { content: 'Rate', rowSpan: 2, styles: { halign: 'center', valign: 'middle', fontSize: 5.5 } },
+      { content: 'Taxable\nValue', rowSpan: 2, styles: { halign: 'center', valign: 'middle', fontSize: 5.5 } },
+      { content: 'GST', colSpan: 2, styles: { halign: 'center', fontSize: 5.8 } },
+      { content: 'Discount', colSpan: 2, styles: { halign: 'center', fontSize: 5.8 } },
+      { content: 'Total', rowSpan: 2, styles: { halign: 'center', valign: 'middle', fontSize: 6.2, fontStyle: 'bold' } },
+    ],
+    [
+      { content: '%', styles: { halign: 'center', fontSize: 5.2 } },
+      { content: 'Amount', styles: { halign: 'center', fontSize: 5.2 } },
+      { content: '%', styles: { halign: 'center', fontSize: 5.2 } },
+      { content: 'Amount', styles: { halign: 'center', fontSize: 5.2 } },
+    ],
+  ]
+}
+
+function getItemsTableColumnStyles(contentW: number): Record<number, object> {
+  const widths = getItemsTableColumnWidths(contentW)
   return {
-    0: { cellWidth: w[0], halign: 'center', valign: 'top' },
-    1: { cellWidth: tableW - fixed, valign: 'top' },
-    2: { cellWidth: w[2], halign: 'center' },
-    3: { cellWidth: w[3], halign: 'right' },
-    4: { cellWidth: w[4], halign: 'right' },
-    5: { cellWidth: w[5], halign: 'right' },
-    6: { cellWidth: w[6], halign: 'center' },
-    7: { cellWidth: w[7], halign: 'right' },
-    8: { cellWidth: w[8], halign: 'right' },
-    9: { cellWidth: w[9], halign: 'center' },
-    10: { cellWidth: w[10], halign: 'right' },
-    11: { cellWidth: w[11], halign: 'right', fontStyle: 'bold', overflow: 'linebreak' },
+    0: { cellWidth: widths[0], halign: 'center', valign: 'top' },
+    1: { cellWidth: widths[1], halign: 'left', valign: 'top', overflow: 'linebreak' },
+    2: { cellWidth: widths[2], halign: 'center', valign: 'top' },
+    3: { cellWidth: widths[3], halign: 'center', valign: 'top' },
+    4: { cellWidth: widths[4], halign: 'right', valign: 'top' },
+    5: { cellWidth: widths[5], halign: 'right', valign: 'top' },
+    6: { cellWidth: widths[6], halign: 'center', valign: 'top' },
+    7: { cellWidth: widths[7], halign: 'right', valign: 'top' },
+    8: { cellWidth: widths[8], halign: 'center', valign: 'top' },
+    9: { cellWidth: widths[9], halign: 'right', valign: 'top' },
+    10: {
+      cellWidth: widths[10],
+      halign: 'center',
+      valign: 'top',
+      fontStyle: 'bold',
+      fontSize: ITEM_TABLE_FONT_SIZE,
+      cellPadding: ITEM_TABLE_CELL_PADDING,
+    },
   }
 }
 
-function getProductColumnWidth(contentW: number, isIgst: boolean): number {
-  const colCount = isIgst ? 11 : 12
-  const tableW = contentW - itemsTableBorderAllowance(colCount)
-  const fixed = isIgst ? 104 : 107
-  return tableW - fixed
+function getProductColumnWidth(contentW: number): number {
+  return getItemsTableColumnWidths(contentW)[1]
 }
 
 function estimateProductsBlockHeight(
   doc: jsPDF,
   items: QuotationPdfItem[],
-  contentW: number,
-  isIgst: boolean
+  contentW: number
 ): number {
-  const productColW = getProductColumnWidth(contentW, isIgst)
+  const productColW = getProductColumnWidth(contentW)
   let productsH = 0
   for (const item of items) {
     productsH += Math.max(7, estimateProductCellHeight(doc, item, productColW))
   }
-  return 7 + productsH
+  return 14 + productsH
 }
 
 function drawInvoiceTermsBlock(
@@ -769,7 +951,7 @@ function drawQuotationFooter(
     doc.text('Pay using UPI', qrColX + bankQrW / 2, qrBoxY + qrSize + 3, { align: 'center' })
   }
 
-  // Right — Tax summary + signatory
+  // Right — Tax summary + signatory (merged stamp area below summary)
   const signTop = top + mainH - FOOTER_SIGN_IN_RIGHT_H
   drawTaxSummaryTable(
     doc,
@@ -785,22 +967,29 @@ function drawQuotationFooter(
     hidePricingTotals,
     Number(document.discount_amount) || 0
   )
-  doc.line(splitX, signTop, bodyRight, signTop)
-  doc.setFontSize(5.8)
+
+  const signH = top + mainH - signTop
+  doc.setFillColor(255, 255, 255)
+  doc.setDrawColor(...BORDER)
+  doc.setLineWidth(0.25)
+  doc.rect(splitX, signTop, rightW, signH, 'FD')
+
+  doc.setFontSize(5.5)
   doc.setTextColor(...TEXT)
   doc.setFont('helvetica', 'normal')
+  doc.text('(E & O.E.)', bodyRight - pad, signTop + 4, { align: 'right' })
   doc.text(
     'Certified that the particulars given above are true and correct.',
     bodyRight - pad,
-    signTop + 4.5,
-    { align: 'right' }
+    signTop + 8.5,
+    { align: 'right', maxWidth: rightW - pad * 2 }
   )
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(6)
-  doc.text(`For ${settings.companyName}`, bodyRight - pad, signTop + 9, { align: 'right' })
+  doc.text(`For ${settings.companyName}`, bodyRight - pad, signTop + 14, { align: 'right' })
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(5.8)
-  doc.text('Authorised Signatory', bodyRight - pad, signTop + 14, { align: 'right' })
+  doc.text('Authorised Signatory', bodyRight - pad, signTop + signH - 3, { align: 'right' })
 
   // Terms & Condition (full width below main footer — quotations only)
   const termsText = (document.terms || settings.termsCondition)?.trim()
@@ -882,13 +1071,22 @@ function renderSalesDocumentPage(
   const colW = contentW / 3
   const cellPad = DETAIL_CELL_PADDING
   const textW = colW - cellPad * 2
-  const consigneeParty = document.consignee || document.customer
+  const isPurchaseDoc = kind === 'purchase' || kind === 'purchase-order'
+  const primaryParty = isPurchaseDoc
+    ? (document as unknown as PurchasePdfData).vendor ?? document.customer
+    : document.customer
+  const consigneeParty = isPurchaseDoc ? primaryParty : document.consignee || document.customer
+  const [partyHeaderLeft, partyHeaderRight] = getPartyColumnHeaders(kind)
 
-  const buyerFields = getPartyFields(document.customer, false)
+  const buyerFields = getPartyFields(primaryParty, false)
   const consigneeFields = getPartyFields(consigneeParty, true)
   const metaFields = getDocumentMetaFields(
     kind,
-    document as QuotationPdfData & InvoicePdfData & DeliveryChallanPdfData
+    document as QuotationPdfData &
+      InvoicePdfData &
+      DeliveryChallanPdfData &
+      PurchasePdfData &
+      PurchaseOrderPdfData
   )
   const detailsRowHeight = Math.max(
     estimateLabeledBlockHeight(doc, buyerFields, textW),
@@ -913,11 +1111,11 @@ function renderSalesDocumentPage(
     body: [
       [
         {
-          content: 'Details of Buyer | Billed to :',
+          content: partyHeaderLeft,
           styles: { fontStyle: 'bold', halign: 'center', valign: 'middle', minCellHeight: 7 },
         },
         {
-          content: 'Details of Consignee | Shipped to :',
+          content: partyHeaderRight,
           styles: { fontStyle: 'bold', halign: 'center', valign: 'middle', minCellHeight: 7 },
         },
         {
@@ -957,11 +1155,12 @@ function renderSalesDocumentPage(
   y += 2
 
   // ── Items table ──
-  const gstType = resolveDocumentGstType(settings, document.customer, gstTypeOverride)
+  const gstType = resolveDocumentGstType(settings, primaryParty, gstTypeOverride)
   const isIgst = gstType === 'IGST'
   const hideItemPricing =
-    (kind === 'delivery-challan' || kind === 'returnable-challan') &&
-    !(document as DeliveryChallanPdfData).include_pricing
+    (kind === 'delivery-challan' || kind === 'returnable-challan' || kind === 'purchase-order') &&
+    !document.include_pricing
+  const discountIsFlat = kind === 'purchase'
 
   let totalQty = 0
   let totalTaxable = 0
@@ -971,19 +1170,15 @@ function renderSalesDocumentPage(
   let totalDiscount = 0
   let totalAmount = 0
 
-  const tableHead = isIgst
-    ? [['Sr. No.', 'Name of Product / Service', 'HSN / SAC', 'Qty', 'Rate', 'Taxable Value', 'IGST %', 'IGST Amt', 'Disc %', 'Disc Amt', 'Total']]
-    : [['Sr. No.', 'Name of Product / Service', 'HSN / SAC', 'Qty', 'Rate', 'Taxable Value', 'CGST %', 'CGST Amt', 'SGST Amt', 'Disc %', 'Disc Amt', 'Total']]
+  const tableHead = buildItemsTableHead()
 
   const tableBody = document.items.map((item, idx) => {
-    const t = computeQuotationItemTotals(
-      { quantity: Number(item.quantity), rate: Number(item.rate), discount: Number(item.discount) || 0, gstRate: Number(item.gst_rate) },
-      gstType
-    )
+    const t = computePdfItemLineTotals(kind, item, gstType)
     const qty = Number(item.quantity)
     const unit = item.unit_short || 'PCS'
     const taxable = t.taxable
     const discPct = Number(item.discount) || 0
+    const gstAmount = isIgst ? t.igst : t.cgst + t.sgst
     totalQty += qty
     totalTaxable += taxable
     totalIgst += t.igst
@@ -1000,37 +1195,40 @@ function renderSalesDocumentPage(
     ] as string[]
 
     if (hideItemPricing) {
-      if (isIgst) {
-        row.push('', '', '', '', '', '', '')
-      } else {
-        row.push('', '', '', '', '', '', '', '')
-      }
+      row.push('', '', '', '', '', '', '')
     } else {
-      row.push(formatMoney(item.rate), formatMoney(taxable))
-      if (isIgst) {
-        row.push(`${item.gst_rate}%`, formatMoney(t.igst))
-      } else {
-        row.push(`${item.gst_rate / 2}%`, formatMoney(t.cgst), formatMoney(t.sgst))
-      }
       row.push(
-        discPct > 0 ? `${discPct}%` : '',
-        discPct > 0 ? formatMoney(t.discAmt) : '',
+        formatMoney(item.rate),
+        formatMoney(taxable),
+        formatPdfRateNumber(Number(item.gst_rate) || 0),
+        formatMoney(gstAmount),
+        !discountIsFlat && discPct > 0 ? `${discPct}%` : '',
+        t.discAmt > 0 ? formatMoney(t.discAmt) : '',
         formatMoney(t.total)
       )
     }
     return row
   })
 
+  const totalTaxAmt = isIgst ? totalIgst : totalCgst + totalSgst
   const totalRow = hideItemPricing
-    ? isIgst
-      ? ['', 'Total', '', String(roundToTwo(totalQty)), '', '', '', '', '', '', '']
-      : ['', 'Total', '', String(roundToTwo(totalQty)), '', '', '', '', '', '', '', '']
-    : isIgst
-      ? ['', 'Total', '', String(roundToTwo(totalQty)), '', formatMoney(totalTaxable), '', formatMoney(totalIgst), '', formatMoney(totalDiscount), formatMoney(totalAmount)]
-      : ['', 'Total', '', String(roundToTwo(totalQty)), '', formatMoney(totalTaxable), '', formatMoney(totalCgst), formatMoney(totalSgst), '', formatMoney(totalDiscount), formatMoney(totalAmount)]
+    ? ['', 'Total', '', String(roundToTwo(totalQty)), '', '', '', '', '', '', '']
+    : [
+        '',
+        'Total',
+        '',
+        String(roundToTwo(totalQty)),
+        '',
+        formatMoney(totalTaxable),
+        '',
+        formatMoney(totalTaxAmt),
+        '',
+        formatMoney(totalDiscount),
+        formatMoney(totalAmount),
+      ]
 
   const itemsTableStartY = y
-  const colCount = isIgst ? 11 : 12
+  const colCount = ITEMS_TABLE_COL_COUNT
   const termsSource = document.terms || settings.termsCondition
   const useCompactLayout = document.items.length <= 2
   const mainFooterH = getFooterMainH(isIgst, kind, doc, termsSource?.trim() || '', contentW * FOOTER_LEFT_RATIO)
@@ -1039,7 +1237,7 @@ function renderSalesDocumentPage(
   let spacerHeight = 0
   const spacerRows: string[][] = []
   if (useCompactLayout) {
-    const usedHeight = estimateProductsBlockHeight(doc, document.items, contentW, isIgst)
+    const usedHeight = estimateProductsBlockHeight(doc, document.items, contentW)
     spacerHeight = Math.max(12, footerLayout.totalRowTop - itemsTableStartY - usedHeight - FOOTER_TOTAL_ROW_H)
     if (spacerHeight > 0) {
       spacerRows.push(Array(colCount).fill(''))
@@ -1053,7 +1251,7 @@ function renderSalesDocumentPage(
     head: tableHead,
     body: [...tableBody, ...spacerRows, totalRow],
     margin: { left: bodyLeft, right: pageW - bodyRight },
-    tableWidth: contentW - itemsTableBorderAllowance(colCount),
+    tableWidth: contentW,
     styles: {
       fontSize: ITEM_TABLE_FONT_SIZE,
       cellPadding: ITEM_TABLE_CELL_PADDING,
@@ -1071,7 +1269,7 @@ function renderSalesDocumentPage(
       lineWidth: TABLE_FULL_BORDER,
       fontSize: 6,
     },
-    columnStyles: getItemsTableColumnStyles(contentW, isIgst),
+    columnStyles: getItemsTableColumnStyles(contentW),
     didParseCell: (data) => {
       if (data.section === 'head') {
         data.cell.styles.lineWidth = TABLE_FULL_BORDER
@@ -1114,6 +1312,12 @@ function renderSalesDocumentPage(
       data.cell.styles.lineWidth = TABLE_VERTICAL_BORDER
       data.cell.styles.valign = 'top'
 
+      if (data.column.index === 10 && !isTotalRow) {
+        data.cell.styles.fontStyle = 'bold'
+        data.cell.styles.halign = 'center'
+        data.cell.styles.valign = 'top'
+      }
+
       if (data.column.index === 1) {
         const item = document.items[data.row.index]
         data.cell.text = ['']
@@ -1135,18 +1339,23 @@ function renderSalesDocumentPage(
         doc.setFillColor(245, 248, 252)
         doc.rect(data.cell.x + 0.2, data.cell.y + 0.2, data.cell.width - 0.4, data.cell.height - 0.4, 'F')
 
-        const rightCols = isIgst ? [3, 4, 5, 7, 9, 10] : [3, 4, 5, 7, 8, 10, 11]
-        const align: 'left' | 'center' | 'right' =
-          data.column.index === 1 ? 'left' : rightCols.includes(data.column.index) ? 'right' : 'center'
         const pad = 1.5
-        const textX =
-          align === 'right'
+        const isTotalCol = data.column.index === 10
+        const textY = itemsTableBodyTextY(data.cell.y, data.cell.height)
+        const align: 'left' | 'center' | 'right' = isTotalCol
+          ? 'center'
+          : data.column.index === 1
+            ? 'left'
+            : [3, 4, 5, 7, 9].includes(data.column.index)
+              ? 'right'
+              : 'center'
+        const textX = isTotalCol
+          ? data.cell.x + data.cell.width / 2
+          : align === 'right'
             ? data.cell.x + data.cell.width - pad
             : align === 'center'
               ? data.cell.x + data.cell.width / 2
               : data.cell.x + pad
-        // Fixed offset from top — sits slightly above bottom (jsPDF y is baseline)
-        const textY = data.cell.y + Math.min(3.6, data.cell.height - 2.2)
 
         doc.setFontSize(ITEM_TABLE_FONT_SIZE)
         doc.setFont('helvetica', 'bold')
@@ -1276,6 +1485,56 @@ export function generateReturnableChallanPdfBuffer(
   pages.forEach((copy, index) => {
     if (index > 0) doc.addPage()
     renderSalesDocumentPage(doc, 'returnable-challan', challan, settings, challan.gst_type, {
+      copyLabel: INVOICE_COPY_LABELS[copy],
+      pageNumber: index + 1,
+      totalPages: pages.length,
+    })
+  })
+
+  return doc.output('arraybuffer')
+}
+
+export function generatePurchasePdfBuffer(
+  purchase: PurchasePdfData,
+  settings: QuotationPdfSettings,
+  copies: InvoiceCopyType[] = ['original']
+): ArrayBuffer {
+  const selected = INVOICE_COPY_TYPES.filter((copy) => copies.includes(copy))
+  const pages = selected.length > 0 ? selected : (['original'] as InvoiceCopyType[])
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' })
+  const payload = {
+    ...purchase,
+    customer: purchase.vendor,
+  }
+
+  pages.forEach((copy, index) => {
+    if (index > 0) doc.addPage()
+    renderSalesDocumentPage(doc, 'purchase', payload, settings, purchase.gst_type, {
+      copyLabel: INVOICE_COPY_LABELS[copy],
+      pageNumber: index + 1,
+      totalPages: pages.length,
+    })
+  })
+
+  return doc.output('arraybuffer')
+}
+
+export function generatePurchaseOrderPdfBuffer(
+  po: PurchaseOrderPdfData,
+  settings: QuotationPdfSettings,
+  copies: InvoiceCopyType[] = ['original']
+): ArrayBuffer {
+  const selected = INVOICE_COPY_TYPES.filter((copy) => copies.includes(copy))
+  const pages = selected.length > 0 ? selected : (['original'] as InvoiceCopyType[])
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' })
+  const payload = {
+    ...po,
+    customer: po.vendor,
+  }
+
+  pages.forEach((copy, index) => {
+    if (index > 0) doc.addPage()
+    renderSalesDocumentPage(doc, 'purchase-order', payload, settings, po.gst_type, {
       copyLabel: INVOICE_COPY_LABELS[copy],
       pageNumber: index + 1,
       totalPages: pages.length,

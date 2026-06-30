@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { appendOrgFilter } from '@/lib/tenant'
 import { purchaseOrderSchema } from '@/lib/validations'
 import { ensureDocumentTermsColumns } from '@/lib/ensure-purchase-schema'
+import { normalizePurchaseDocumentItem } from '@/lib/purchase-include-pricing'
 import { buildDocumentNumberPrefix, documentSerialSubstringStart, nextDocumentNumber } from '@/lib/document-number'
 import { randomUUID } from 'crypto'
 
@@ -60,6 +61,8 @@ export async function POST(req: NextRequest) {
     await ensureDocumentTermsColumns()
     const body = await req.json()
     const data = purchaseOrderSchema.parse(body)
+    const includePricing = data.includePricing
+    const gstType = data.gstType
     await conn.beginTransaction()
 
     const [settings] = await conn.execute(
@@ -76,20 +79,26 @@ export async function POST(req: NextRequest) {
 
     let subtotal = 0, totalDiscount = 0, totalTaxable = 0, totalCgst = 0, totalSgst = 0, totalIgst = 0, grandTotal = 0
     const itemsWithTotals = data.items.map((item: any) => {
-      const t = computeItemTotals(item)
-      subtotal += item.quantity * item.rate; totalDiscount += t.discAmt; totalTaxable += t.taxable
-      totalCgst += t.cgst; totalSgst += t.sgst; totalIgst += t.igst; grandTotal += t.total
-      return { ...item, ...t }
+      const normalized = normalizePurchaseDocumentItem(item, includePricing)
+      const t = computeItemTotals(normalized, gstType)
+      subtotal += normalized.quantity * normalized.rate
+      totalDiscount += t.discAmt
+      totalTaxable += t.taxable
+      totalCgst += t.cgst
+      totalSgst += t.sgst
+      totalIgst += t.igst
+      grandTotal += t.total
+      return { ...normalized, ...t }
     })
 
     const id = randomUUID()
     await conn.execute(
       `INSERT INTO purchase_orders (id, organization_id, po_no, vendor_id, date, expected_date, subtotal,
-        discount_amount, tax_amount, total_amount, notes, terms, status)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        discount_amount, tax_amount, total_amount, notes, terms, include_pricing, status)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [id, organizationId, poNo, data.vendorId, data.date, data.expectedDate || null,
        subtotal, totalDiscount, totalCgst + totalSgst + totalIgst, grandTotal,
-       data.notes || null, data.terms || null, 'PENDING']
+       data.notes || null, data.terms || null, includePricing ? 1 : 0, 'PENDING']
     )
 
     for (const item of itemsWithTotals) {

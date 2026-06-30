@@ -71,7 +71,7 @@ export async function GET(req: NextRequest) {
 
   if (salesTypes.includes(type)) {
     const conditions: string[] = []
-    const params: unknown[] = []
+    const params: any[] = []
     appendOrgFilter(conditions, params, organizationId!, 'i')
     if (fromDate) {
       conditions.push('DATE(i.date) >= ?')
@@ -92,7 +92,7 @@ export async function GET(req: NextRequest) {
        ORDER BY i.date ASC, i.invoice_no ASC
        LIMIT ?`,
       [...params, limit]
-    ) as [Record<string, unknown>[]]
+    ) as [Record<string, unknown>[], unknown]
 
     const [summaryRows] = await db.execute(
       `SELECT COALESCE(SUM(i.total_amount), 0) AS total_sales,
@@ -102,14 +102,14 @@ export async function GET(req: NextRequest) {
        FROM invoices i
        ${where}`,
       params
-    ) as [Record<string, unknown>[]]
+    ) as [Record<string, unknown>[], unknown]
 
     return NextResponse.json({ data: rows.map(mapInvoiceRow), summary: summaryRows[0] || null })
   }
 
   if (purchaseTypes.includes(type)) {
     const conditions: string[] = []
-    const params: unknown[] = []
+    const params: any[] = []
     appendOrgFilter(conditions, params, organizationId!, 'p')
     if (fromDate) {
       conditions.push('DATE(p.date) >= ?')
@@ -130,7 +130,7 @@ export async function GET(req: NextRequest) {
        ORDER BY p.date DESC, p.purchase_no DESC
        LIMIT ?`,
       [...params, limit]
-    ) as [Record<string, unknown>[]]
+    ) as [Record<string, unknown>[], unknown]
 
     const [summaryRows] = await db.execute(
       `SELECT COALESCE(SUM(p.total_amount), 0) AS total_purchases,
@@ -140,14 +140,14 @@ export async function GET(req: NextRequest) {
        FROM purchases p
        ${where}`,
       params
-    ) as [Record<string, unknown>[]]
+    ) as [Record<string, unknown>[], unknown]
 
     return NextResponse.json({ data: rows.map(mapPurchaseRow), summary: summaryRows[0] || null })
   }
 
   if (stockTypes.includes(type) || lowStockTypes.includes(type)) {
     const conditions: string[] = ['p.is_active = 1']
-    const params: unknown[] = []
+    const params: any[] = []
     appendOrgFilter(conditions, params, organizationId!, 'p')
     if (lowStockTypes.includes(type)) {
       conditions.push('p.current_stock <= COALESCE(p.low_stock_alert, 10)')
@@ -161,7 +161,7 @@ export async function GET(req: NextRequest) {
        ORDER BY p.name ASC
        LIMIT ?`,
       [...params, limit]
-    ) as [Record<string, unknown>[]]
+    ) as [Record<string, unknown>[], unknown]
 
     return NextResponse.json({ data: rows.map(mapProductRow) })
   }

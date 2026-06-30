@@ -15,6 +15,7 @@ import { useDefaultDocumentTerms } from '@/hooks/use-default-document-terms'
 import { DocumentTermsField } from '@/components/shared/document-terms-field'
 import { purchaseOrderSchema, type PurchaseOrderInput } from '@/lib/validations'
 import { calculateGST, calculateItemAmount, formatCurrency, GST_RATES, cn } from '@/lib/utils'
+import { resolveStoredIncludePricing } from '@/lib/purchase-include-pricing'
 import { Plus, Trash2, ArrowLeft, Package } from 'lucide-react'
 import Link from 'next/link'
 import { ContactFieldInputs } from '@/components/shared/contact-field-inputs'
@@ -108,6 +109,7 @@ export function PurchaseOrderForm({ purchaseOrderId }: { purchaseOrderId?: strin
     defaultValues: {
       date: new Date().toISOString().split('T')[0],
       gstType: 'CGST_SGST',
+      includePricing: false,
       items: [{ productId: '', description: '', quantity: 1, rate: 0, discount: 0, gstRate: 0 }],
     },
   })
@@ -115,6 +117,7 @@ export function PurchaseOrderForm({ purchaseOrderId }: { purchaseOrderId?: strin
   const { fields, append, remove } = useFieldArray({ control, name: 'items' })
   const watchedItems = watch('items')
   const gstType = watch('gstType')
+  const includePricing = watch('includePricing')
 
   const applyDefaultTerms = useCallback(
     (terms: string) => setValue('terms', terms),
@@ -182,6 +185,31 @@ export function PurchaseOrderForm({ purchaseOrderId }: { purchaseOrderId?: strin
         if (!res.ok) throw new Error('Not found')
         const data = await res.json()
         setPoNo(data.po_no || '')
+        const mappedItems =
+          (data.items || []).length > 0
+            ? data.items.map(
+                (item: {
+                  product_id: string
+                  description?: string | null
+                  quantity: number
+                  rate: number
+                  discount?: number
+                  gst_rate: number
+                }) => ({
+                  productId: item.product_id,
+                  description: item.description || '',
+                  quantity: Number(item.quantity),
+                  rate: Number(item.rate),
+                  discount: Number(item.discount) || 0,
+                  gstRate: Number(item.gst_rate),
+                })
+              )
+            : [{ productId: '', description: '', quantity: 1, rate: 0, discount: 0, gstRate: 0 }]
+        const savedIncludePricing = resolveStoredIncludePricing(
+          data.include_pricing,
+          mappedItems,
+          data.subtotal
+        )
         reset({
           vendorId: data.vendor_id,
           date: toDateInput(data.date) || new Date().toISOString().split('T')[0],
@@ -189,26 +217,8 @@ export function PurchaseOrderForm({ purchaseOrderId }: { purchaseOrderId?: strin
           gstType: 'CGST_SGST',
           notes: data.notes || '',
           terms: data.terms || '',
-          items:
-            (data.items || []).length > 0
-              ? data.items.map(
-                  (item: {
-                    product_id: string
-                    description?: string | null
-                    quantity: number
-                    rate: number
-                    discount?: number
-                    gst_rate: number
-                  }) => ({
-                    productId: item.product_id,
-                    description: item.description || '',
-                    quantity: Number(item.quantity),
-                    rate: Number(item.rate),
-                    discount: Number(item.discount) || 0,
-                    gstRate: Number(item.gst_rate),
-                  })
-                )
-              : [{ productId: '', description: '', quantity: 1, rate: 0, discount: 0, gstRate: 0 }],
+          includePricing: savedIncludePricing,
+          items: mappedItems,
         })
         setVendorFields({
           name: data.vendor_name || '',
@@ -302,7 +312,7 @@ export function PurchaseOrderForm({ purchaseOrderId }: { purchaseOrderId?: strin
     }))
   }
 
-  const applyProduct = (fieldId: string, index: number, productId: string) => {
+  const applyProduct = (fieldId: string, index: number, productId: string, withPricing = includePricing) => {
     const p = products.find((x) => x.id === productId)
     if (!p) return
     if (getUsedProductIds(index).has(productId)) {
@@ -311,12 +321,32 @@ export function PurchaseOrderForm({ purchaseOrderId }: { purchaseOrderId?: strin
     }
     setValue(`items.${index}.productId`, productId, { shouldValidate: true })
     setValue(`items.${index}.description`, p.description || p.name)
-    setValue(`items.${index}.rate`, p.purchase_price)
-    setValue(`items.${index}.gstRate`, p.gst_rate)
+    if (withPricing) {
+      setValue(`items.${index}.rate`, Number(p.purchase_price) || 0)
+      setValue(`items.${index}.gstRate`, Number(p.gst_rate) || 0)
+    } else {
+      setValue(`items.${index}.rate`, 0)
+      setValue(`items.${index}.discount`, 0)
+      setValue(`items.${index}.gstRate`, 0)
+    }
     updateItemMeta(fieldId, {
       productName: p.name,
       hsnSac: formatHsnSac(p.hsn_code, p.sac_code),
       listOpen: false,
+    })
+  }
+
+  const handleIncludePricingChange = (checked: boolean) => {
+    setValue('includePricing', checked, { shouldDirty: true })
+    fields.forEach((field, index) => {
+      const productId = watchedItems?.[index]?.productId
+      if (checked && productId) {
+        applyProduct(field.id, index, productId, true)
+      } else if (!checked) {
+        setValue(`items.${index}.rate`, 0)
+        setValue(`items.${index}.discount`, 0)
+        setValue(`items.${index}.gstRate`, 0)
+      }
     })
   }
 
@@ -346,6 +376,17 @@ export function PurchaseOrderForm({ purchaseOrderId }: { purchaseOrderId?: strin
   const totals = computeTotals()
 
   const onSubmit = async (data: PurchaseOrderInput) => {
+    if (data.includePricing) {
+      const missingRate = data.items.some((item) => !item.rate || item.rate <= 0)
+      if (missingRate) {
+        toast({
+          title: 'Validation',
+          description: 'Enter rate for all items when pricing is included',
+          variant: 'destructive',
+        })
+        return
+      }
+    }
     setSaving(true)
     try {
       const url = isEdit ? `/api/purchase-orders/${purchaseOrderId}` : '/api/purchase-orders'
@@ -513,10 +554,21 @@ export function PurchaseOrderForm({ purchaseOrderId }: { purchaseOrderId?: strin
 
         <Card className="shadow-sm border-muted-foreground/20 overflow-hidden">
           <CardHeader className="py-3 px-4 bg-muted/30 border-b flex flex-row items-center justify-between gap-2">
-            <CardTitle className="text-base font-semibold flex items-center gap-2">
-              <Package className="h-4 w-4 text-muted-foreground" />
-              Items
-            </CardTitle>
+            <div className="flex flex-wrap items-center gap-3 min-w-0">
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <Package className="h-4 w-4 text-muted-foreground" />
+                Items
+              </CardTitle>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={Boolean(includePricing)}
+                  onChange={(e) => handleIncludePricingChange(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 accent-blue-600"
+                />
+                <span className="text-muted-foreground text-xs sm:text-sm">Include pricing details</span>
+              </label>
+            </div>
             <span className="text-xs text-muted-foreground">{fields.length} product(s)</span>
           </CardHeader>
           <CardContent className="p-0">
@@ -614,12 +666,13 @@ export function PurchaseOrderForm({ purchaseOrderId }: { purchaseOrderId?: strin
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-xs">Rate *</Label>
+                        <Label className="text-xs">Rate{includePricing ? ' *' : ''}</Label>
                         <Input
                           type="number"
                           min="0"
                           step="0.01"
                           className="h-9 no-spinner"
+                          disabled={!includePricing}
                           {...register(`items.${i}.rate`, { valueAsNumber: true })}
                         />
                       </div>
@@ -628,6 +681,7 @@ export function PurchaseOrderForm({ purchaseOrderId }: { purchaseOrderId?: strin
                         <Select
                           value={String(item?.gstRate ?? 0)}
                           onValueChange={(v) => setValue(`items.${i}.gstRate`, parseFloat(v))}
+                          disabled={!includePricing}
                         >
                           <SelectTrigger className="h-9">
                             <SelectValue />
@@ -650,7 +704,7 @@ export function PurchaseOrderForm({ purchaseOrderId }: { purchaseOrderId?: strin
                           <Input
                             readOnly
                             className="h-9 pl-7 font-semibold bg-muted/30"
-                            value={Number.isFinite(lineTotal) ? lineTotal.toFixed(2) : ''}
+                            value={includePricing && Number.isFinite(lineTotal) ? lineTotal.toFixed(2) : ''}
                           />
                         </div>
                       </div>
@@ -695,33 +749,41 @@ export function PurchaseOrderForm({ purchaseOrderId }: { purchaseOrderId?: strin
               <CardTitle className="text-base">Summary</CardTitle>
             </CardHeader>
             <CardContent className="p-4 space-y-2">
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Taxable Amount</span>
-              <span>{formatCurrency(totals.taxable)}</span>
-            </div>
-            {gstType === 'CGST_SGST' && (
-              <>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">CGST</span>
-                  <span>{formatCurrency(totals.cgst)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">SGST</span>
-                  <span>{formatCurrency(totals.sgst)}</span>
-                </div>
-              </>
-            )}
-            {gstType === 'IGST' && (
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">IGST</span>
-                <span>{formatCurrency(totals.igst)}</span>
-              </div>
-            )}
-            <div className="flex justify-between font-bold text-base border-t pt-3">
-              <span>Grand Total</span>
-              <span className="text-primary">{formatCurrency(totals.total)}</span>
-            </div>
-          </CardContent>
+              {includePricing ? (
+                <>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Taxable Amount</span>
+                    <span>{formatCurrency(totals.taxable)}</span>
+                  </div>
+                  {gstType === 'CGST_SGST' && (
+                    <>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">CGST</span>
+                        <span>{formatCurrency(totals.cgst)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">SGST</span>
+                        <span>{formatCurrency(totals.sgst)}</span>
+                      </div>
+                    </>
+                  )}
+                  {gstType === 'IGST' && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">IGST</span>
+                      <span>{formatCurrency(totals.igst)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between font-bold text-base border-t pt-3">
+                    <span>Grand Total</span>
+                    <span className="text-primary">{formatCurrency(totals.total)}</span>
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Pricing fields are hidden. Enable &quot;Include pricing details&quot; after vendor quotation.
+                </p>
+              )}
+            </CardContent>
         </Card>
         </div>
 

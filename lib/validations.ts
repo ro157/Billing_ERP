@@ -278,11 +278,12 @@ export const purchaseOrderSchema = z.object({
   gstType: z.enum(['CGST_SGST', 'IGST', 'EXEMPT']).default('CGST_SGST'),
   notes: z.string().optional(),
   terms: z.string().optional(),
+  includePricing: z.boolean().default(false),
   items: z.array(z.object({
     productId: z.string().min(1),
     description: z.string().optional(),
     quantity: z.number().positive(),
-    rate: z.number().positive(),
+    rate: z.number().min(0).default(0),
     discount: z.number().min(0).max(100).default(0),
     gstRate: z.number().min(0).max(100).default(0),
   })).min(1),

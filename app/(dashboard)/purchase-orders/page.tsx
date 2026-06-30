@@ -7,14 +7,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { DocumentPdfViewer } from '@/components/shared/document-pdf-viewer'
 import { useToast } from '@/hooks/use-toast'
 import { usePageCount } from '@/hooks/use-page-count'
 import { Eye, Edit, Trash2, ClipboardList, Calendar } from 'lucide-react'
@@ -31,19 +25,6 @@ interface PO {
   total_amount: number
   status: string
   notes?: string | null
-}
-
-interface POItem {
-  id: string
-  description?: string | null
-  quantity: number
-  rate: number
-  gst_rate: number
-  amount: number
-}
-
-interface PODetail extends PO {
-  items?: POItem[]
 }
 
 const STATUS_COLORS: Record<string, 'secondary' | 'default' | 'destructive' | 'outline'> = {
@@ -73,7 +54,7 @@ function POActions({
   const icon = compact ? 'h-3.5 w-3.5' : 'h-4 w-4'
   return (
     <div className="inline-flex items-center justify-center gap-0">
-      <Button variant="ghost" size="icon" title="View" className={size} onClick={onView}>
+      <Button variant="ghost" size="icon" title="View PDF" className={size} onClick={onView}>
         <Eye className={icon} />
       </Button>
       <Link href={`/purchase-orders/${poId}/edit`}>
@@ -107,9 +88,10 @@ export default function PurchaseOrdersPage() {
   const [viewMode, setViewMode] = useState<'table' | 'card'>('table')
   const [isMobile, setIsMobile] = useState(false)
 
-  const [viewOpen, setViewOpen] = useState(false)
-  const [viewLoading, setViewLoading] = useState(false)
-  const [viewing, setViewing] = useState<PODetail | null>(null)
+  const [pdfViewerOpen, setPdfViewerOpen] = useState(false)
+  const [pdfViewerUrl, setPdfViewerUrl] = useState<string | null>(null)
+  const [pdfViewerTitle, setPdfViewerTitle] = useState('')
+  const [pdfViewerFilename, setPdfViewerFilename] = useState('purchase-order.pdf')
 
   const showTable = viewMode === 'table' && !isMobile
   const showCards = viewMode === 'card' || isMobile
@@ -149,23 +131,12 @@ export default function PurchaseOrdersPage() {
     fetchPos()
   }, [fetchPos])
 
-  const fetchPoDetail = async (id: string) => {
-    const res = await fetch(`/api/purchase-orders/${id}`)
-    if (!res.ok) throw new Error('Failed to load purchase order')
-    return await parseJsonResponse<PODetail>(res)
-  }
-
-  const openView = async (p: PO) => {
-    setViewOpen(true)
-    setViewLoading(true)
-    setViewing(p)
-    try {
-      setViewing(await fetchPoDetail(p.id))
-    } catch {
-      toast({ title: 'Error', description: 'Could not load purchase order details', variant: 'destructive' })
-    } finally {
-      setViewLoading(false)
-    }
+  const handleView = (p: PO) => {
+    const safeName = p.po_no.replace(/[/\\?%*:|"<>]/g, '-')
+    setPdfViewerTitle(p.po_no)
+    setPdfViewerFilename(`${safeName}.pdf`)
+    setPdfViewerUrl(`/api/purchase-orders/${p.id}/pdf`)
+    setPdfViewerOpen(true)
   }
 
   const handleDelete = async (id: string, poNo: string) => {
@@ -212,7 +183,7 @@ export default function PurchaseOrdersPage() {
                   <p className="text-xs text-muted-foreground mt-0.5 break-words">{p.vendor_name}</p>
                 </div>
               </div>
-              <POActions compact poId={p.id} onView={() => openView(p)} onDelete={() => handleDelete(p.id, p.po_no)} />
+              <POActions compact poId={p.id} onView={() => handleView(p)} onDelete={() => handleDelete(p.id, p.po_no)} />
             </div>
 
             <div className="mt-2 space-y-1.5 text-sm border-t pt-2">
@@ -335,7 +306,7 @@ export default function PurchaseOrdersPage() {
                       {formatCurrency(p.total_amount)}
                     </TableCell>
                     <TableCell className="text-center">
-                      <POActions poId={p.id} onView={() => openView(p)} onDelete={() => handleDelete(p.id, p.po_no)} />
+                      <POActions poId={p.id} onView={() => handleView(p)} onDelete={() => handleDelete(p.id, p.po_no)} />
                     </TableCell>
                   </TableRow>
                 ))}
@@ -349,93 +320,13 @@ export default function PurchaseOrdersPage() {
         <Pagination />
       </Card>
 
-      <Dialog open={viewOpen} onOpenChange={setViewOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Purchase Order Details</DialogTitle>
-          </DialogHeader>
-          {viewLoading || !viewing ? (
-            <p className="text-sm text-muted-foreground py-6 text-center">Loading...</p>
-          ) : (
-            <div className="space-y-4 text-sm">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <p className="text-xs text-muted-foreground">PO No</p>
-                  <p className="font-medium">{viewing.po_no}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Date</p>
-                  <p className="font-medium">{formatDate(viewing.date)}</p>
-                </div>
-                <div className="col-span-2">
-                  <p className="text-xs text-muted-foreground">Vendor</p>
-                  <p className="font-medium">{viewing.vendor_name}</p>
-                </div>
-                {viewing.expected_date && (
-                  <div>
-                    <p className="text-xs text-muted-foreground">Expected Delivery</p>
-                    <p className="font-medium">{formatDate(viewing.expected_date)}</p>
-                  </div>
-                )}
-                <div>
-                  <p className="text-xs text-muted-foreground">Status</p>
-                  <StatusBadge status={viewing.status} />
-                </div>
-              </div>
-
-              {viewing.items && viewing.items.length > 0 && (
-                <div className="border rounded-lg overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead className="bg-muted/50">
-                      <tr>
-                        <th className="text-left p-2 font-medium">Item</th>
-                        <th className="text-right p-2 font-medium">Qty</th>
-                        <th className="text-right p-2 font-medium">Rate</th>
-                        <th className="text-right p-2 font-medium">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {viewing.items.map((item) => (
-                        <tr key={item.id} className="border-t">
-                          <td className="p-2">{item.description || '—'}</td>
-                          <td className="p-2 text-right">{item.quantity}</td>
-                          <td className="p-2 text-right">{formatCurrency(item.rate)}</td>
-                          <td className="p-2 text-right font-medium">{formatCurrency(item.amount)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              {viewing.notes && (
-                <div>
-                  <p className="text-xs text-muted-foreground">Notes</p>
-                  <p className="font-medium">{viewing.notes}</p>
-                </div>
-              )}
-
-              <div className="flex justify-between font-bold text-base border-t pt-3">
-                <span>Total</span>
-                <span className="text-primary">{formatCurrency(viewing.total_amount)}</span>
-              </div>
-            </div>
-          )}
-          <DialogFooter className="flex-col-reverse sm:flex-row gap-2">
-            <Button variant="outline" onClick={() => setViewOpen(false)} className="w-full sm:w-auto">
-              Close
-            </Button>
-            {viewing && (
-              <Link href={`/purchase-orders/${viewing.id}/edit`} className="w-full sm:w-auto">
-                <Button className="w-full sm:w-auto">
-                  <Edit className="w-4 h-4 mr-2" />
-                  Edit
-                </Button>
-              </Link>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <DocumentPdfViewer
+        open={pdfViewerOpen}
+        onOpenChange={setPdfViewerOpen}
+        pdfApiUrl={pdfViewerUrl}
+        title={pdfViewerTitle}
+        filename={pdfViewerFilename}
+      />
     </div>
   )
 }

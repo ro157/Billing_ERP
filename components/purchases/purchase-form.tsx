@@ -434,6 +434,8 @@ export function PurchaseForm({ purchaseId }: { purchaseId?: string }) {
     }
     setValue(`items.${index}.productId`, productId, { shouldValidate: true })
     setValue(`items.${index}.description`, p.description || p.name)
+    setValue(`items.${index}.rate`, Number(p.purchase_price) || 0)
+    setValue(`items.${index}.gstRate`, Number(p.gst_rate) || 0)
     setItemMeta((prev) => ({
       ...prev,
       [fieldId]: {

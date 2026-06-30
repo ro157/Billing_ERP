@@ -40,4 +40,24 @@ export function computePurchaseItemTotals(
   return { taxable, cgst, sgst, igst, total, discAmt, totalWithGst, lineRoundOff }
 }
 
+/** Purchase order line totals — discount % applied on gross (qty × rate) before GST */
+export function computePurchaseOrderItemTotals(
+  item: { quantity: number; rate: number; discount?: number; gstRate: number },
+  gstType: GstType = 'CGST_SGST'
+) {
+  const gross = roundToTwo(item.quantity * item.rate)
+  const discPct = Math.min(Math.max(0, Number(item.discount) || 0), 100)
+  const taxable = roundToTwo(gross * (1 - discPct / 100))
+  const gst = calculateGST(taxable, item.gstRate || 0, gstType)
+  const discAmt = roundToTwo(gross - taxable)
+  return {
+    taxable,
+    cgst: gst.cgst,
+    sgst: gst.sgst,
+    igst: gst.igst,
+    total: roundToTwo(taxable + gst.total),
+    discAmt,
+  }
+}
+
 export { computeLineTotals as computePurchaseLineTotals } from './quotation-totals'
