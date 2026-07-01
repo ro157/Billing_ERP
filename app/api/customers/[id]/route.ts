@@ -93,7 +93,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     'SELECT id FROM customers WHERE id = ? AND organization_id = ?',
     [params.id, organizationId]
   ) as any[]
-  if (!existing[0]) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (!existing[0]) return NextResponse.json({ error: 'Not found'}, { status: 404 })
 
   const [rows] = await db.execute(
     'SELECT COUNT(*) as cnt FROM invoices WHERE customer_id = ? AND organization_id = ?',

@@ -4,6 +4,7 @@ import { requireSuperAdmin } from '@/lib/superadmin-auth'
 import { ensureOrganizationSchema } from '@/lib/ensure-organization-schema'
 import { ensureOrganizationDetailsSchema } from '@/lib/ensure-organization-details-schema'
 import { z } from 'zod'
+import { sendOrganizationApprovedEmail } from '@/lib/organization-emails'
 
 const updateOrgSchema = z.object({
   name: z.string().trim().min(2, 'Name must be at least 2 characters').max(100).optional(),
@@ -105,12 +106,25 @@ export async function PATCH(
     const body = await req.json()
     const data = updateOrgSchema.parse(body)
 
-    const [existing] = (await db.execute('SELECT id FROM organizations WHERE id = ? LIMIT 1', [
-      orgId,
-    ])) as [{ id: string }[], unknown]
+    const [existing] = (await db.execute(
+      `SELECT id, name, status, owner_name as ownerName, owner_email as ownerEmail
+       FROM organizations WHERE id = ? LIMIT 1`,
+      [orgId]
+    )) as [
+      {
+        id: string
+        name: string
+        status: string
+        ownerName: string | null
+        ownerEmail: string | null
+      }[],
+      unknown,
+    ]
     if (!existing[0]) {
       return NextResponse.json({ error: 'Organization not found' }, { status: 404 })
     }
+
+    const previousStatus = existing[0].status
 
     const updates: string[] = []
     const values: (string | number)[] = []
@@ -148,6 +162,21 @@ export async function PATCH(
     const [rows] = (await db.execute('SELECT * FROM organizations WHERE id = ?', [
       orgId,
     ])) as [Record<string, unknown>[], unknown]
+
+    if (
+      data.status === 'ACTIVE' &&
+      previousStatus === 'PENDING' &&
+      existing[0].ownerEmail
+    ) {
+      const mailResult = await sendOrganizationApprovedEmail({
+        to: existing[0].ownerEmail,
+        ownerName: existing[0].ownerName || 'there',
+        organizationName: existing[0].name,
+      })
+      if (!mailResult.ok) {
+        console.error('Organisation approval email failed:', mailResult.error)
+      }
+    }
 
     return NextResponse.json(rows[0])
   } catch (err: unknown) {

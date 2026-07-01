@@ -8,6 +8,8 @@ import { ensureOrganizationIdSequencesSchema } from '@/lib/ensure-organization-i
 import { ensureBusinessSettingsBankingColumns } from '@/lib/ensure-business-settings-schema'
 import { generateUniqueOrgSlug } from '@/lib/tenant'
 import { generateOrganizationId } from '@/lib/org-id'
+import { ORG_APPROVAL_SUCCESS } from '@/lib/registration-messages'
+import { sendOrganizationRegistrationEmail } from '@/lib/organization-emails'
 
 export async function POST(req: NextRequest) {
   const conn = await db.getConnection()
@@ -104,10 +106,18 @@ export async function POST(req: NextRequest) {
 
     await conn.commit()
 
+    const mailResult = await sendOrganizationRegistrationEmail({
+      to: email,
+      ownerName: data.name.trim(),
+      organizationName: data.organizationName.trim(),
+    })
+    if (!mailResult.ok) {
+      console.error('Registration welcome email failed:', mailResult.error)
+    }
+
     return NextResponse.json(
       {
-        message:
-          'Registration submitted successfully. Your organisation is pending Super Admin approval.',
+        message: ORG_APPROVAL_SUCCESS,
         organizationId: orgId,
         slug,
         status: 'PENDING',

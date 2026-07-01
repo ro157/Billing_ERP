@@ -22,8 +22,12 @@ import { useConsoleMessage } from '@/hooks/use-console-message'
 import { useToast } from '@/hooks/use-toast'
 import { sanitizeGstinInput, sanitizeMobileInput } from '@/lib/field-validation'
 import { INDIAN_STATES } from '@/lib/utils'
-import { Loader2, Eye, EyeOff, Building2, UserCircle, type LucideIcon } from 'lucide-react'
+import { Loader2, Eye, EyeOff, Building2, UserCircle, Clock, type LucideIcon } from 'lucide-react'
 import Link from 'next/link'
+import {
+  ORG_APPROVAL_NOTICE,
+  ORG_APPROVAL_SUCCESS,
+} from '@/lib/registration-messages'
 
 function FieldError({ message }: { message?: string }) {
   if (!message) return null
@@ -127,12 +131,10 @@ export function RegisterForm({ onSuccess, onSignInClick }: RegisterFormProps) {
         return
       }
 
-      showSuccess(
-        'Registration submitted! Your organisation is pending Super Admin approval. You can sign in once approved.'
-      )
+      showSuccess(ORG_APPROVAL_SUCCESS)
       toast({
         title: 'Registration submitted',
-        description: 'Your organisation is pending Super Admin approval.',
+        description: ORG_APPROVAL_SUCCESS,
       })
 
       if (onSuccess) {
@@ -374,6 +376,13 @@ export function RegisterForm({ onSuccess, onSignInClick }: RegisterFormProps) {
       </CardContent>
 
       <CardFooter className="sticky bottom-0 z-10 flex flex-col gap-3 border-t border-blue-100 bg-white/95 px-4 py-4 backdrop-blur-sm sm:px-6 sm:py-5">
+        <div
+          role="note"
+          className="flex gap-3 rounded-lg border border-amber-200/80 bg-amber-50/90 px-3.5 py-3 text-left"
+        >
+          <Clock className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" aria-hidden />
+          <p className="text-sm leading-relaxed text-amber-900/90">{ORG_APPROVAL_NOTICE}</p>
+        </div>
         {submitError && (
           <ConsoleMessage type="error" text={submitError} className="text-left" />
         )}

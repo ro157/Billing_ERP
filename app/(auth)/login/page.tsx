@@ -15,6 +15,7 @@ import { ConsoleMessage, CONSOLE_MESSAGE_DURATION_MS } from '@/components/shared
 import { useConsoleMessage } from '@/hooks/use-console-message'
 import { Loader2, Eye, EyeOff } from 'lucide-react'
 import Link from 'next/link'
+import { ORG_APPROVAL_LOGIN_PENDING } from '@/lib/registration-messages'
 
 export default function LoginPage() {
   return (
@@ -33,9 +34,7 @@ function LoginForm() {
 
   useEffect(() => {
     if (searchParams.get('pending') === '1') {
-      showSuccess(
-        'Registration received. Your organisation is awaiting Super Admin approval. You can sign in once approved.'
-      )
+      showSuccess(ORG_APPROVAL_LOGIN_PENDING)
     }
   }, [searchParams, showSuccess])
 
