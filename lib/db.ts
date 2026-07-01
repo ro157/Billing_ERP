@@ -5,7 +5,12 @@ const globalForDb = globalThis as unknown as { mysqlPool?: mysql.Pool }
 const pool =
   globalForDb.mysqlPool ??
   mysql.createPool({
-    uri: process.env.DATABASE_URL,
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+    port: Number(process.env.DB_PORT),
+
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0,
@@ -18,6 +23,7 @@ if (process.env.NODE_ENV !== 'production') {
 
 export function isDbConnectionError(error: unknown): boolean {
   const err = error as { code?: string; errno?: number }
+
   return (
     err?.code === 'ECONNREFUSED' ||
     err?.code === 'ENOTFOUND' ||
